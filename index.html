@@ -624,12 +624,18 @@ function render(){
   if(nc) nc.textContent=newList.length?`${newList.length}건`:'';
 }
 
+// 예약 식별용 고유 key (시간|이름|연락처 조합 - 시트 원본과 매칭되는 안정적인 키)
+function statusKey(b){
+  return `${b.time}|${b.name}|${b.phone}`;
+}
+
 function moveToWait(id){
   const b=[...bookings,...newBookings].find(x=>x.id===id);
   if(!b) return;
   b.movedToWait=true;
   expanded[id]=false;
   toast(`✅ ${b.name}님 대기로 이동!`);
+  saveStatusToGAS(statusKey(b), 'wait');
   render();
 }
 
@@ -647,6 +653,7 @@ function markDone(id){
     doneOrder=doneOrder.filter(x=>x!==id);  // 되돌리면 순서에서 제거
   }
   toast(b.done?`✅ ${b.name}님 완료!`:`↩️ ${b.name}님 되돌렸어요`);
+  saveStatusToGAS(statusKey(b), b.done ? 'done' : 'wait');
   updateStats();render();
 }
 
@@ -734,48 +741,89 @@ loadBookingsFromGAS();
 // ── 구글시트(예약자관리, 신규) GAS 연동 ──
 async function loadBookingsFromGAS(){
   try{
-    const [resB, resN] = await Promise.all([
+    const [resB, resN, resS] = await Promise.all([
       fetch(`${GAS_URL}?action=getBookings`),
-      fetch(`${GAS_URL}?action=getNew`)
+      fetch(`${GAS_URL}?action=getNew`),
+      fetch(`${GAS_URL}?action=getStatus`)
     ]);
     const dataB = await resB.json();
     const dataN = await resN.json();
+    const dataS = await resS.json();
     if(dataB.error) throw new Error(dataB.error);
     if(dataN.error) throw new Error(dataN.error);
+    const statusMap = (dataS && dataS.statusMap) || {};
 
     // 시트 데이터를 기존 bookings 구조로 변환
-    bookings = (dataB.bookings||[]).map((row,i)=>({
-      id: 1000 + i,
-      time: row.time,
-      name: row.name,
-      vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
-      site: row.channel,
-      totalQty: row.qty || 1,
-      phone: row.phone,
-      sms: row.smsSent || false,
-      done: row.done || false
-    }));
+    bookings = (dataB.bookings||[]).map((row,i)=>{
+      const key = `${row.time}|${row.name}|${row.phone}`;
+      const saved = statusMap[key];
+      return {
+        id: 1000 + i,
+        time: row.time,
+        name: row.name,
+        vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
+        site: row.channel,
+        totalQty: row.qty || 1,
+        phone: row.phone,
+        sms: row.smsSent || false,
+        done: saved === 'done' ? true : (saved === 'wait' ? false : (row.done || false)),
+        movedToWait: saved === 'wait' || saved === 'done'
+      };
+    });
 
-    newBookings = (dataN.newBookings||[]).map((row,i)=>({
-      id: 5000 + i,
-      time: row.time,
-      name: row.name,
-      vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
-      site: row.channel,
-      totalQty: row.qty || 1,
-      phone: row.phone,
-      sms: false,
-      done: false,
-      isNew: true
-    }));
+    newBookings = (dataN.newBookings||[]).map((row,i)=>{
+      const key = `${row.time}|${row.name}|${row.phone}`;
+      const saved = statusMap[key];
+      return {
+        id: 5000 + i,
+        time: row.time,
+        name: row.name,
+        vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
+        site: row.channel,
+        totalQty: row.qty || 1,
+        phone: row.phone,
+        sms: false,
+        done: saved === 'done',
+        movedToWait: saved === 'wait' || saved === 'done',
+        isNew: true
+      };
+    });
 
-    doneOrder = bookings.filter(b=>b.done).map(b=>b.id);
+    doneOrder = bookings.filter(b=>b.done).map(b=>b.id)
+      .concat(newBookings.filter(b=>b.done).map(b=>b.id));
+
+    // 현장손님 상태도 복원 (key 패턴: walkin|연락처|시간)
+    Object.keys(statusMap).forEach(key=>{
+      if(key.startsWith('walkin|')){
+        const [, phone, time] = key.split('|');
+        if(!walkinList.find(w=>w.phone===phone && w.time===time)){
+          const isDone = statusMap[key] === 'done';
+          const newId = walkinNextId++;
+          walkinList.push({id:newId, phone, time, sentSms:{}, done:isDone});
+          if(isDone) walkinDoneOrder.push(newId);
+        }
+      }
+    });
+
     render();
+    renderWalkinTbl();
     toast('✅ 구글시트 연동 완료');
   }catch(e){
     console.warn('GAS 연동 실패, 샘플 데이터 사용:', e.message);
     bookings.filter(b=>b.done).forEach(b=>doneOrder.push(b.id));
     render();
+  }
+}
+
+// 완료/대기 처리 상태를 GAS(처리상태 시트)에 저장
+async function saveStatusToGAS(key, status){
+  try{
+    await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({ action:'setStatus', key, status })
+    });
+  }catch(e){
+    console.warn('상태 저장 실패:', e.message);
   }
 }
 
@@ -1130,6 +1178,7 @@ function markWalkinDone(id){
   renderWalkinTbl();
   renderDoneTbl();
   toast(w.done?'✅ 완료처리':'↩️ 되돌렸어요');
+  saveStatusToGAS('walkin|'+w.phone+'|'+w.time, w.done ? 'done' : 'wait');
 }
 
 function renderWalkinTbl(){
