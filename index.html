@@ -636,7 +636,28 @@ function moveToWait(id){
   expanded[id]=false;
   toast(`✅ ${b.name}님 대기로 이동!`);
   saveStatusToGAS(statusKey(b), 'wait');
+  // 신규예약이었다면 구글시트(신규→예약자관리)로도 실제 이전
+  if(b.isNew && b.rowIndex){
+    moveNewToBookingsInGAS(b.rowIndex, b.name);
+  }
   render();
+}
+
+async function moveNewToBookingsInGAS(rowIndex, name){
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({ action:'moveNewToBookings', rowIndex })
+    });
+    const data = await res.json();
+    if(data.error){
+      console.warn('신규→예약자관리 이전 실패:', data.error);
+    } else {
+      console.log(`[시트이전] ${name}님 신규→예약자관리 완료`);
+    }
+  }catch(e){
+    console.warn('신규→예약자관리 이전 네트워크 오류:', e.message);
+  }
 }
 
 function toggleRow(id){}
@@ -776,6 +797,7 @@ async function loadBookingsFromGAS(){
       const saved = statusMap[key];
       return {
         id: 5000 + i,
+        rowIndex: row.rowIndex,
         time: row.time,
         name: row.name,
         vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
@@ -818,12 +840,16 @@ async function loadBookingsFromGAS(){
 // 완료/대기 처리 상태를 GAS(처리상태 시트)에 저장
 async function saveStatusToGAS(key, status){
   try{
-    await fetch(GAS_URL, {
+    const res = await fetch(GAS_URL, {
       method:'POST',
       body: JSON.stringify({ action:'setStatus', key, status })
     });
+    const data = await res.json();
+    console.log('[상태저장]', key, status, '→', data);
+    if(data.error){ toast('⚠️ 상태저장 실패: '+data.error); }
   }catch(e){
     console.warn('상태 저장 실패:', e.message);
+    toast('⚠️ 상태저장 네트워크 오류');
   }
 }
 
@@ -839,6 +865,7 @@ setInterval(async ()=>{
       const existing = newBookings.find(x=>x.phone===row.phone && x.time===row.time && x.name===row.name);
       return {
         id: existing ? existing.id : 5000+i+Date.now()%1000,
+        rowIndex: row.rowIndex,
         time: row.time, name: row.name,
         vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
         site: row.channel, totalQty: row.qty||1, phone: row.phone,
