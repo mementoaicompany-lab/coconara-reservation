@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>코코나라 예약관리</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Noto Sans KR',sans-serif;background:#f2f3f5;font-size:13px;color:#111}
+
+/* HEADER */
+.hd{background:#fff;border-bottom:2px solid #111;padding:6px 10px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.hd-left{display:flex;align-items:center;gap:8px}
+.logo{font-size:14px;font-weight:900;letter-spacing:-0.5px}
+.logo em{color:#1D9E75;font-style:normal}
+.today{font-size:11px;font-weight:700;background:#111;color:#fff;padding:2px 8px;border-radius:4px}
+.hd-stats{display:flex;gap:4px}
+.hd-stat{text-align:center;background:#f5f5f5;border:1.5px solid #ddd;border-radius:6px;padding:2px 8px;min-width:46px}
+.hd-stat .n{font-size:16px;font-weight:900;line-height:1.2;color:#111}
+.hd-stat .l{font-size:9px;color:#666;font-weight:500}
+.hd-stat.hl .n{color:#1D9E75}
+.hd-stat.rd .n{color:#E24B4A}
+.hd-right{display:flex;gap:4px}
+.btn-sm{font-family:'Noto Sans KR',sans-serif;font-size:11px;font-weight:700;padding:4px 9px;border-radius:6px;border:1.5px solid #111;background:#fff;cursor:pointer;transition:background .12s}
+.btn-sm:hover{background:#f0f0f0}
+.btn-sm.green{background:#1D9E75;color:#fff;border-color:#1D9E75}
+
+/* 페이지 탭 */
+.page-tabs{display:flex;background:#111;padding:0 10px}
+.page-tab{font-family:'Noto Sans KR',sans-serif;padding:8px 18px;font-size:13px;font-weight:700;color:#888;background:none;border:none;cursor:pointer;border-bottom:3px solid transparent;transition:all .12s}
+.page-tab.on{color:#fff;border-bottom:3px solid #1D9E75}
+.page-tab:hover{color:#ccc}
+.page-content{display:none}
+.page-content.on{display:block}
+
+/* ── 차량 현황 패널 ── */
+.fleet-panel{background:#fff;border-bottom:2px solid #111;padding:5px 10px}
+.fleet-title{font-size:10px;font-weight:700;color:#888;letter-spacing:0.05em;margin-bottom:4px}
+.fleet-card{display:inline-flex;gap:18px;background:#fff;border:1.5px solid #ddd;border-radius:8px;padding:7px 12px}
+.fc-group{display:flex;flex-direction:column;min-width:90px}
+.fc-name{font-size:11px;font-weight:900;text-align:left;margin-bottom:4px;padding-bottom:4px;border-bottom:1.5px solid #eee;color:#111}
+.fc-row{display:flex;align-items:center;gap:8px;padding:2px 0}
+.fc-row.fc-rem{background:#f0faf6;border-radius:4px;margin-top:2px;padding:3px 6px}
+.fc-label{font-size:10px;font-weight:700;color:#888;flex-shrink:0;width:24px}
+.fleet-card input{font-family:'Noto Sans KR',sans-serif;width:22px;text-align:right;font-size:14px;font-weight:900;border:none;outline:none;background:transparent;cursor:pointer;padding:1px;-moz-appearance:textfield}
+.fleet-card input::-webkit-outer-spin-button,.fleet-card input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.fleet-card input:focus{background:#fffbe6;border-radius:3px}
+.fleet-card .fc-rem input{font-size:16px}
+input.v-pa{color:#111}
+input.v-o{color:#CC0000}
+input.v-ko{color:#0055CC}
+/* 예약 대수 바 */
+.resv-bar{display:flex;align-items:center;gap:8px;padding:5px 10px;background:#f8f8f8;border-bottom:1px solid #e0e0e0}
+.resv-bar-label{font-size:10px;font-weight:700;color:#888}
+.resv-bar-item{font-size:12px;font-weight:700;padding:2px 10px;border-radius:4px;border:1.5px solid}
+.rbi-pa{color:#111;border-color:#aaa;background:#f0f0f0}
+.rbi-o {color:#CC0000;border-color:#CC0000;background:#fff5f5}
+.rbi-ko{color:#0055CC;border-color:#0055CC;background:#f0f4ff}
+
+/* TABS */
+
+
+/* TABLE */
+.tbl-wrap{overflow-x:auto;padding:6px 8px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:6px;overflow:hidden;border:1.5px solid #222}
+thead tr{background:#111}
+th{padding:5px 6px;font-size:10px;font-weight:700;color:#fff;text-align:left;letter-spacing:0.03em;white-space:nowrap}
+tbody tr{border-bottom:1px solid #e8e8e8;cursor:pointer;transition:background .1s}
+tbody tr:last-child{border-bottom:none}
+tbody tr:hover{background:#f7faf9}
+tbody tr.done{opacity:0.32}
+tbody tr.expanded{background:#f0faf6}
+td{padding:2px 6px;vertical-align:middle;white-space:nowrap;line-height:1.1}
+
+.td-time{font-size:13px;font-weight:900;color:#777}
+.td-name{font-size:13px;font-weight:900;color:#111}
+.new-bd{font-size:9px;font-weight:800;background:#E24B4A;color:#fff;padding:1px 4px;border-radius:3px;margin-left:2px;animation:blink 1.2s infinite}
+
+/* 차량 텍스트 */
+.vehicles{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
+.vo  {font-size:13px;font-weight:900;color:#CC0000}
+.vpa {font-size:13px;font-weight:900;color:#111}
+.vko {font-size:13px;font-weight:900;color:#0055CC}
+.vo2 {font-size:13px;font-weight:900;color:#CC0000;opacity:.6}
+.vpa2{font-size:13px;font-weight:900;color:#111;opacity:.6}
+.vko2{font-size:13px;font-weight:900;color:#0055CC;opacity:.6}
+
+/* 채널 */
+.td-site{font-size:12px;font-weight:900;color:#888;line-height:1.1}
+.site-sub{display:none}
+
+/* 문자 버튼 */
+.sms-wrap{display:flex;align-items:center;gap:2px;flex-wrap:nowrap;white-space:nowrap}
+.sms-main-btns{display:flex;gap:2px;flex-wrap:nowrap}
+.sms-num{font-family:'Noto Sans KR',sans-serif;font-size:11px;font-weight:800;width:20px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid;cursor:pointer;background:#fff;transition:all .15s}
+.sms-num:hover{opacity:0.7}
+.sn1{border-color:#1D9E75;color:#1D9E75}
+.sn2{border-color:#0055CC;color:#0055CC}
+.sn1.sent{background:#1D9E75;color:#fff;border-color:#1D9E75}
+.sn2.sent{background:#0055CC;color:#fff;border-color:#0055CC}
+.sn3.sent,.sn4.sent,.sn5.sent,.sn6.sent{opacity:1;filter:brightness(0.7)}
+.sn3{border-color:#CC7700;color:#CC7700}
+.sn4{border-color:#880088;color:#880088}
+.sn5{border-color:#CC0000;color:#CC0000}
+.sn6{border-color:#555;color:#555}
+.sms-toggle{font-family:'Noto Sans KR',sans-serif;font-size:9px;font-weight:700;width:16px;height:20px;display:flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid #ccc;color:#999;background:#f5f5f5;cursor:pointer}
+.sms-extra-row{display:none;gap:2px;margin-top:2px}
+.sms-extra-row.open{display:flex}
+
+.done-chk{width:18px;height:18px;border-radius:4px;border:2px solid #ccc;background:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:11px;transition:all .12s}
+.done-chk.checked{background:#1D9E75;border-color:#1D9E75;color:#fff}
+.act-icon{font-family:'Noto Sans KR',sans-serif;font-size:14px;font-weight:800;padding:3px 9px;border-radius:6px;border:1.5px solid;cursor:pointer;transition:all .12s;background:#fff}
+.act-icon.ok{border-color:#1D9E75;color:#1D9E75}
+.act-icon.ok:hover{background:#1D9E75;color:#fff}
+.act-icon.undo{border-color:#E24B4A;color:#E24B4A}
+.act-icon.undo:hover{background:#fdecea}
+
+.sec{display:flex;align-items:center;gap:6px;padding:7px 10px 4px;font-size:12px;font-weight:900;color:#111;letter-spacing:0.02em}
+.sec-line{flex:1;height:1px;background:#ddd}
+.sec-count{font-size:10px;font-weight:700;color:#aaa}
+.sec-new{border-top:2px solid #E24B4A;color:#E24B4A;margin-top:2px}
+.sec-wait{border-top:2px solid #111;margin-top:6px}
+.sec-walkin{border-top:2px solid #E87700;margin-top:6px;color:#E87700}
+.sec-done{border-top:2px dashed #bbb;margin-top:6px;color:#888}
+.walkin-input-row{display:flex;gap:6px;padding:5px 10px 4px;align-items:center}
+.walkin-phone-inline{font-family:'Noto Sans KR',sans-serif;flex:1;font-size:14px;font-weight:700;padding:7px 11px;border:2px solid #ddd;border-radius:8px;outline:none;color:#111;transition:border-color .15s}
+.walkin-phone-inline:focus{border-color:#E87700}
+.walkin-inline-btn{font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:700;padding:7px 14px;border-radius:8px;border:1.5px solid #E87700;background:#E87700;color:#fff;cursor:pointer;white-space:nowrap}
+.walkin-row td{background:#FFF8F0 !important}
+.empty{text-align:center;padding:28px;color:#bbb;font-size:13px;font-weight:500}
+tr.time-sep td{padding:3px 0;background:#f2f3f5;border:none}
+td[ondblclick]:not([ondblclick=""]){cursor:pointer;position:relative}
+td[ondblclick]:not([ondblclick=""]):hover{background:#f9f9f9 !important}
+td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;color:#bbb;position:absolute;bottom:2px;right:3px;line-height:1}
+
+/* ADD FORM */
+.add-form{background:#fff;border:1.5px solid #222;border-radius:6px;margin:6px 8px;padding:10px}
+.add-form h3{font-size:12px;font-weight:900;margin-bottom:8px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px;margin-bottom:7px}
+.fg{display:flex;flex-direction:column;gap:2px}
+.fg label{font-size:10px;font-weight:700;color:#555}
+.fg input,.fg select{font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:700;padding:5px 8px;border:1.5px solid #ccc;border-radius:5px;outline:none}
+.fg input:focus,.fg select:focus{border-color:#1D9E75}
+.vsel{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px}
+.vsel-chip{font-size:12px;font-weight:800;padding:4px 10px;border-radius:5px;border:2px solid #ddd;background:#f8f8f8;cursor:pointer;transition:all .12s}
+.vsel-chip.sel-o {color:#CC0000;border-color:#CC0000;background:#fff0f0}
+.vsel-chip.sel-pa{color:#111;border-color:#111;background:#f0f0f0}
+.vsel-chip.sel-ko{color:#0055CC;border-color:#0055CC;background:#f0f4ff}
+.form-actions{display:flex;gap:6px}
+.btn-add{font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:800;padding:7px 16px;background:#111;color:#fff;border:none;border-radius:5px;cursor:pointer}
+.btn-cancel{font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:700;padding:7px 12px;background:#f5f5f5;color:#666;border:1.5px solid #ddd;border-radius:5px;cursor:pointer}
+
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(70px);background:#111;color:#fff;padding:8px 18px;border-radius:30px;font-size:12px;font-weight:700;z-index:999;transition:transform .2s ease;white-space:nowrap}
+.toast.show{transform:translateX(-50%) translateY(0)}
+
+/* 통계 탭 */
+.chart-wrap{background:#fff;margin:8px 10px;border-radius:8px;border:1.5px solid #ddd;padding:10px 12px}
+.chart-title{font-size:11px;font-weight:700;color:#888;margin-bottom:6px;letter-spacing:0.04em}
+.chart-legend{display:flex;gap:10px;margin-bottom:10px}
+.cleg{display:flex;align-items:center;gap:3px;font-size:11px;font-weight:700}
+.cleg-dot{width:9px;height:9px;border-radius:2px;display:inline-block}
+
+/* 날짜 그룹 */
+.date-group{display:flex;align-items:center;gap:0;margin-bottom:4px;border-radius:5px;overflow:hidden;border:1px solid #e8e8e8}
+.date-group.is-today{border-color:#1D9E75;box-shadow:0 0 0 1px #1D9E75}
+.date-group.has-warn{border-color:#E24B4A}
+.dg-label{width:auto;min-width:70px;flex-shrink:0;display:flex;flex-direction:column;justify-content:center;align-items:center;background:#f8f8f8;padding:3px 6px;border-right:1px solid #e8e8e8;font-size:10px;font-weight:700;color:#555;text-align:center;white-space:nowrap}
+.dg-label.is-today{color:#1D9E75;font-weight:900;background:#f0faf6}
+.dg-warn-icon{font-size:9px;margin-top:1px}
+.dg-bars{flex:1;display:flex;flex-direction:column;gap:1px;padding:3px 6px;justify-content:center}
+.dg-bar-row{display:flex;align-items:center;gap:4px;height:11px}
+.dg-bar-label{font-size:9px;font-weight:800;width:28px;flex-shrink:0;text-align:right;white-space:nowrap;overflow:hidden}
+.dg-bar-label.lpa{color:#555}
+.dg-bar-label.lo {color:#CC0000}
+.dg-bar-label.lko{color:#0055CC}
+.dg-bar-track{flex:1;background:#f0f0f0;border-radius:2px;height:8px;overflow:hidden}
+.dg-bar-fill{height:100%;border-radius:2px;transition:width .3s ease;display:flex;align-items:center;justify-content:flex-end;padding-right:2px}
+.dg-bar-fill span{font-size:8px;font-weight:800;color:#fff;white-space:nowrap}
+.fill-pa{background:#555}
+.fill-o {background:#CC0000}
+.fill-ko{background:#0055CC}
+.fill-pa.warn{background:#111}
+.fill-o.warn {background:#cc0000;box-shadow:0 0 0 1px #ff4444 inset}
+.fill-ko.warn{background:#003399}
+.dg-pct{font-size:9px;font-weight:700;width:26px;flex-shrink:0;text-align:left}
+.pct-ok{color:#bbb}
+.pct-mid{color:#E87700;font-weight:900}
+.pct-hi{color:#E24B4A;font-weight:900}
+
+/* 테이블 */
+.stats-table-today{background:#f0faf6}
+.stats-table-today td:first-child{color:#1D9E75;font-weight:900}
+.td-pa{color:#111;font-weight:900;font-size:12px}
+.td-o {color:#CC0000;font-weight:900;font-size:12px}
+.td-ko{color:#0055CC;font-weight:900;font-size:12px}
+.today-badge{font-size:9px;font-weight:800;background:#1D9E75;color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle}
+.day-badge{font-size:9px;font-weight:800;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle}
+.day-sat{background:#FFE8E8;color:#CC0000}
+.day-sun{background:#FFE8E8;color:#CC0000}
+.day-holiday{background:#FFE8E8;color:#CC0000}
+.row-sat td:first-child{color:#CC0000}
+.row-sun td:first-child{color:#CC0000}
+.row-holiday td:first-child{color:#CC0000}
+.row-sat{background:#FFF8F8}
+.row-sun{background:#FFF8F8}
+.row-holiday{background:#FFF8F8}
+.sync-info{font-size:10px;color:#aaa;text-align:right;padding:4px 12px 8px;font-weight:500}
+
+/* 가용대수 설정 */
+.stats-cap-row{background:#fff;border-bottom:1px solid #e0e0e0;padding:7px 12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.cap-label{font-size:10px;font-weight:700;color:#888;white-space:nowrap}
+.cap-inputs{display:flex;gap:8px;flex-wrap:wrap}
+.cap-item{font-size:11px;font-weight:700;display:flex;align-items:center;gap:4px;padding:3px 8px;border-radius:5px;border:1.5px solid}
+.cap-pa{color:#111;border-color:#888;background:#f3f3f3}
+.cap-o {color:#CC0000;border-color:#CC0000;background:#fff5f5}
+.cap-ko{color:#0055CC;border-color:#0055CC;background:#f0f4ff}
+.cap-item input{font-family:'Noto Sans KR',sans-serif;width:38px;font-size:13px;font-weight:900;border:none;background:transparent;outline:none;color:inherit;text-align:center}
+
+/* 주의 배지 */
+.warn-badge{font-size:9px;font-weight:800;background:#E24B4A;color:#fff;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle}
+.warn-dot{display:inline-block;width:6px;height:6px;background:#E24B4A;border-radius:50%;margin-left:3px;vertical-align:middle}
+.bar-warn{font-size:13px;width:24px;flex-shrink:0;text-align:center}
+
+/* 문자내용 탭 */
+.sms-page-header{background:#fff;border-bottom:1px solid #e0e0e0;padding:8px 12px;display:flex;align-items:baseline;gap:10px}
+.sms-page-title{font-size:13px;font-weight:900}
+.sms-page-sub{font-size:10px;color:#aaa;font-weight:500}
+.sms-card{background:#fff;border:1.5px solid #e0e0e0;border-radius:8px;margin:8px 10px;overflow:hidden}
+.sms-card-header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f8f8f8;cursor:pointer;user-select:none}
+.sms-card-header:hover{background:#f0f0f0}
+.sms-card-body-wrap{display:none}
+.sms-card-body-wrap.open{display:block;border-top:1px solid #eee}
+.toggle-arrow{font-size:10px;color:#aaa;margin-left:auto;flex-shrink:0;transition:transform .15s}
+.toggle-arrow.open{transform:rotate(180deg)}
+.sms-num-badge{width:24px;height:24px;border-radius:5px;border:2px solid;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:900;flex-shrink:0}
+.sms-card-name{font-size:13px;font-weight:900;flex:1}
+.sms-card-name input{font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:900;border:none;background:transparent;outline:none;width:100%;color:#111}
+.sms-card-name input:focus{background:#fffbe6;border-radius:3px;padding:0 3px}
+.sms-copy-btn{font-family:'Noto Sans KR',sans-serif;font-size:11px;font-weight:700;padding:3px 10px;border-radius:5px;border:1.5px solid #ddd;background:#fff;cursor:pointer;color:#555;transition:all .12s}
+.sms-copy-btn:hover{background:#1D9E75;color:#fff;border-color:#1D9E75}
+.sms-card-body{padding:10px 12px}
+.sms-card-body textarea{
+  font-family:'Noto Sans KR',sans-serif;
+  width:100%;font-size:12px;font-weight:500;line-height:1.7;
+  border:1px solid #e8e8e8;border-radius:6px;padding:8px 10px;
+  resize:vertical;min-height:80px;outline:none;color:#333;
+  background:#fafafa;transition:border-color .12s, background .12s;
+}
+.sms-card-body textarea:focus{border-color:#1D9E75;background:#fff}
+.sms-card-footer{padding:4px 12px 8px;display:flex;justify-content:space-between;align-items:center}
+.sms-char-count{font-size:10px;color:#bbb}
+.sms-save-btn{font-family:'Noto Sans KR',sans-serif;font-size:11px;font-weight:700;padding:3px 10px;border-radius:5px;border:1.5px solid #1D9E75;background:#1D9E75;color:#fff;cursor:pointer}
+
+/* 메모 섹션 */
+.memo-section{margin-top:6px;padding-bottom:40px}
+.memo-card{background:#fff;border:1.5px solid #e0e0e0;border-radius:8px;margin:6px 10px;overflow:hidden}
+.memo-card-header{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#f8f8f8;cursor:pointer;user-select:none}
+.memo-card-header:hover{background:#f0f0f0}
+.memo-card-body{display:none;padding:10px 12px;border-top:1px solid #eee}
+.memo-card-body.open{display:block}
+.memo-title-input{font-family:'Noto Sans KR',sans-serif;font-size:13px;font-weight:700;border:none;background:transparent;outline:none;flex:1;padding:2px 4px;color:#111}
+.memo-title-input:focus{background:#fffbe6;border-radius:3px}
+.memo-del-btn{font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;border:1.5px solid #f09595;background:#fdecea;color:#7a1111;cursor:pointer}
+.memo-card-body textarea{font-family:'Noto Sans KR',sans-serif;width:100%;font-size:12px;line-height:1.6;border:1px solid #eee;border-radius:5px;padding:7px 9px;resize:vertical;min-height:60px;outline:none;color:#333;background:#fafafa}
+.memo-card-body textarea:focus{border-color:#1D9E75;background:#fff}
+.memo-card-footer{display:flex;justify-content:flex-end;margin-top:6px}
+
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="hd">
+  <div class="hd-left">
+    <div class="logo">코코<em>나라</em></div>
+    <div class="today" id="today-lbl"></div>
+  </div>
+  <div class="hd-right">
+    <button class="btn-sm green" onclick="toggleAddForm()">＋ 추가</button>
+    <button class="btn-sm" onclick="refreshData()">↻</button>
+  </div>
+</div>
+
+<!-- 페이지 탭 -->
+<div class="page-tabs">
+  <button class="page-tab on" onclick="switchPage('resv',this)">예약관리</button>
+  <button class="page-tab" onclick="switchPage('stats',this)">차량통계</button>
+  <button class="page-tab" onclick="switchPage('sms',this)">문자내용</button>
+</div>
+
+<!-- 1번: 예약관리 -->
+<div id="page-resv" class="page-content on">
+
+<!-- 차량 현황 패널 -->
+<div class="fleet-panel">
+  <div class="fleet-title">▣ 차량 현황 — 가용·남은 클릭해서 수정</div>
+  <div class="fleet-card">
+    <div class="fc-group">
+      <div class="fc-name fc-pa">파미</div>
+      <div class="fc-row"><span class="fc-label">가용</span><input class="v-pa" type="number" id="fl-pa-avail" value="8" min="0" onclick="this.select()"></div>
+      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-pa" type="number" id="fl-pa-rem" value="8" min="0" onclick="this.select()"></div>
+    </div>
+    <div class="fc-group">
+      <div class="fc-name fc-o">오픈카</div>
+      <div class="fc-row"><span class="fc-label">가용</span><input class="v-o" type="number" id="fl-o-avail" value="12" min="0" onclick="this.select()"></div>
+      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-o" type="number" id="fl-o-rem" value="12" min="0" onclick="this.select()"></div>
+    </div>
+    <div class="fc-group">
+      <div class="fc-name fc-ko">코코</div>
+      <div class="fc-row"><span class="fc-label">가용</span><input class="v-ko" type="number" id="fl-ko-avail" value="6" min="0" onclick="this.select()"></div>
+      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-ko" type="number" id="fl-ko-rem" value="6" min="0" onclick="this.select()"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 단일 화면 -->
+<div id="main-content">
+  <div id="add-form-wrap" style="display:none">
+    <div class="add-form">
+      <h3>예약 직접 추가</h3>
+      <div class="form-grid">
+        <div class="fg"><label>방문시간</label><input id="f-time" placeholder="9시, 14시"></div>
+        <div class="fg"><label>이름</label><input id="f-name" placeholder="홍길동"></div>
+        <div class="fg"><label>예약채널</label>
+          <select id="f-site">
+            <option value="S">S — 스마트스토어 할인</option>
+            <option value="NN">NN — 플레이스 할인</option>
+            <option value="S&quot;">S" — 스마트스토어 정상</option>
+            <option value='NN"'>NN" — 플레이스 정상</option>
+          </select>
+        </div>
+        <div class="fg"><label>대수</label><input id="f-qty" type="number" value="1" min="1"></div>
+        <div class="fg"><label>연락처</label><input id="f-phone" placeholder="010-0000-0000" type="tel" oninput="this.value=autoHyphen(this.value)"></div>
+      </div>
+      <div class="fg" style="margin-bottom:6px"><label>차량 종류</label></div>
+      <div class="vsel">
+        <span class="vsel-chip" data-v="오"  onclick="toggleV(this)">오 (할인)</span>
+        <span class="vsel-chip" data-v='오"' onclick="toggleV(this)">오" (정상)</span>
+        <span class="vsel-chip" data-v="파"  onclick="toggleV(this)">파 (할인)</span>
+        <span class="vsel-chip" data-v='파"' onclick="toggleV(this)">파" (정상)</span>
+        <span class="vsel-chip" data-v="코"  onclick="toggleV(this)">코 (할인)</span>
+        <span class="vsel-chip" data-v='코"' onclick="toggleV(this)">코" (정상)</span>
+      </div>
+      <div class="form-actions">
+        <button class="btn-add" onclick="submitBooking()">추가하기</button>
+        <button class="btn-cancel" onclick="toggleAddForm()">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1. 신규 -->
+  <div class="sec sec-new"><span>신규</span><div class="sec-line"></div><span id="new-count" class="sec-count"></span></div>
+  <div class="tbl-wrap"><div id="new-tbl"></div></div>
+
+  <!-- 2. 대기 -->
+  <div class="sec sec-wait"><span>대기</span>
+    <span class="resv-bar-item rbi-pa">파미 <strong id="rv-pa">0</strong></span>
+    <span class="resv-bar-item rbi-o">오픈카 <strong id="rv-o">0</strong></span>
+    <span class="resv-bar-item rbi-ko">코코 <strong id="rv-ko">0</strong></span>
+    <div class="sec-line"></div>
+  </div>
+  <div class="tbl-wrap"><div id="active-tbl"></div></div>
+
+  <!-- 3. 현장손님 -->
+  <div class="sec sec-walkin"><span>현장손님</span><div class="sec-line"></div></div>
+  <div class="walkin-input-row">
+    <input type="tel" id="walkin-phone-inline" class="walkin-phone-inline"
+      placeholder="연락처 입력 후 엔터"
+      maxlength="13" oninput="formatWalkinPhone(this)"
+      onkeydown="if(event.key==='Enter') addWalkinInline()">
+    <button class="walkin-inline-btn" onclick="addWalkinInline()">추가</button>
+  </div>
+  <div class="tbl-wrap"><div id="walkin-tbl"></div></div>
+
+  <!-- 4. 완료 -->
+  <div class="sec sec-done"><span>완료</span><div class="sec-line"></div><span id="done-count" class="sec-count"></span></div>
+  <div class="tbl-wrap"><div id="done-tbl"></div></div>
+</div>
+
+
+
+</div><!-- /page-resv -->
+
+<!-- 2번: 차량통계 -->
+<div id="page-stats" class="page-content">
+  <!-- 가용 설정 + 요약 -->
+  <div class="stats-cap-row">
+    <div class="cap-label">가용 대수 설정</div>
+    <div class="cap-inputs">
+      <span class="cap-item cap-pa">파미 <input type="number" id="cap-pa" value="35" min="1" onchange="renderStats()"></span>
+      <span class="cap-item cap-o">오픈카 <input type="number" id="cap-o" value="22" min="1" onchange="renderStats()"></span>
+      <span class="cap-item cap-ko">코코 <input type="number" id="cap-ko" value="50" min="1" onchange="renderStats()"></span>
+    </div>
+  </div>
+  <!-- 테이블 -->
+  <div class="tbl-wrap">
+    <div class="sec"><span>날짜별 상세</span><div class="sec-line"></div><button class="btn-sm" onclick="loadStats()" style="font-size:10px;padding:2px 8px">↻ 시트 연동</button></div>
+    <div id="stats-table"></div>
+  </div>
+  <div class="sync-info" id="sync-info"></div>
+</div>
+
+<!-- 3번: 문자내용 -->
+<div id="page-sms" class="page-content">
+  <div class="sms-page-header">
+    <span class="sms-page-title">솔라피 문자 세팅 관리</span>
+    <span class="sms-page-sub">버튼 1~6은 예약관리탭과 연동됩니다</span>
+  </div>
+  <div id="sms-cards"></div>
+
+  <!-- 메모 섹션 -->
+  <div class="memo-section">
+    <div class="sec"><span>메모장</span><div class="sec-line"></div><button class="btn-sm" onclick="addMemo()" style="font-size:10px;padding:2px 8px">＋ 추가</button></div>
+    <div id="memo-list"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== Google Apps Script 웹앱 URL (구글시트 ↔ 홈페이지 연동) =====
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxxC6IMQChPla2pzSZONsHBK7iw93DWZEphDKO3Q5794iu8tVLN289JVTHIy8Fyo_-Mpw/exec';
+
+function vClass(code){
+  const base=code.replace('"','');
+  const disc=!code.includes('"');
+  if(base==='오') return disc?'vo':'vo2';
+  if(base==='파') return disc?'vpa':'vpa2';
+  return disc?'vko':'vko2';
+}
+function vHtml(vehicles){
+  return vehicles.map(v=>{
+    const q=v.qty>1?v.qty:'';
+    return `<span class="${vClass(v.code)}">${v.code}${q}</span>`;
+  }).join('<span style="color:#ddd;font-size:10px;margin:0 1px">·</span>');
+}
+
+const SITE_LABEL={
+  'S':  {main:'S',  sub:'스마트 할인'},
+  'NN': {main:'NN', sub:'플레이스 할인'},
+  'S"': {main:'S"', sub:'스마트 정상'},
+  'NN"':{main:'NN"',sub:'플레이스 정상'},
+};
+
+const SMS=[
+  {id:'s1',cls:'sn1',label:'1',title:'예약확인',main:true, msg:(b)=>`[코코나라] ${b.name}님, ${b.time} 예약 확인되었습니다. ${b.vehicles.map(v=>v.code+(v.qty>1?v.qty:'')).join(' ')} ${b.totalQty}대 🏝️`},
+  {id:'s2',cls:'sn2',label:'2',title:'오시는길',main:true, msg:(b)=>`[코코나라] ${b.name}님 안녕하세요! 오시는 길 안내드립니다. 우도 코코나라: [지도링크] 🗺️`},
+  {id:'s3',cls:'sn3',label:'3',title:'대기안내',main:false,msg:(b)=>`[코코나라] ${b.name}님, 차량 준비 중입니다. 잠시만 기다려 주세요 🙏`},
+  {id:'s4',cls:'sn4',label:'4',title:'이용방법',main:false,msg:(b)=>`[코코나라] ${b.name}님, 차량 이용 안내드립니다. 반납 시간 꼭 지켜주세요!`},
+  {id:'s5',cls:'sn5',label:'5',title:'취소안내',main:false,msg:(b)=>`[코코나라] ${b.name}님, 예약이 취소 처리되었습니다.`},
+  {id:'s6',cls:'sn6',label:'6',title:'리뷰요청',main:false,msg:(b)=>`[코코나라] ${b.name}님, 이용해 주셔서 감사합니다! 리뷰 남겨주시면 큰 힘이 됩니다 ⭐`},
+];
+
+let bookings=[
+  {id:1,  time:'9시', name:'이수진',vehicles:[{code:'오', qty:1}],site:'NN', totalQty:1,phone:'010-5005-3484',sms:true, done:false},
+  {id:2,  time:'10시',name:'안인화',vehicles:[{code:'오', qty:2}],site:'S',  totalQty:2,phone:'010-4495-3879',sms:true, done:false},
+  {id:3,  time:'10시',name:'홍영일',vehicles:[{code:'오', qty:1}],site:'S',  totalQty:1,phone:'010-2314-5265',sms:true, done:false},
+  {id:4,  time:'10시',name:'김아진',vehicles:[{code:'오',qty:1},{code:'파',qty:1}],site:'S',totalQty:2,phone:'010-5753-3195',sms:true,done:false},
+  {id:5,  time:'10시',name:'강민주',vehicles:[{code:'코', qty:1}],site:'NN', totalQty:1,phone:'010-6314-9307',sms:true, done:false},
+  {id:6,  time:'11시',name:'최예지',vehicles:[{code:'오', qty:1}],site:'S',  totalQty:1,phone:'010-5124-2300',sms:true, done:false},
+  {id:7,  time:'11시',name:'이하린',vehicles:[{code:'오', qty:1}],site:'S',  totalQty:1,phone:'010-7747-3812',sms:true, done:false},
+  {id:8,  time:'11시',name:'김여진',vehicles:[{code:'파', qty:1}],site:'NN', totalQty:1,phone:'010-6376-5546',sms:true, done:false},
+  {id:9,  time:'11시',name:'한예림',vehicles:[{code:'코"',qty:2}],site:'S"', totalQty:2,phone:'010-8574-9499',sms:true, done:false},
+  {id:10, time:'12시',name:'김민수',vehicles:[{code:'오', qty:1}],site:'S',  totalQty:1,phone:'010-5148-6879',sms:true, done:false},
+  {id:11, time:'12시',name:'조민호',vehicles:[{code:'파', qty:1}],site:'NN', totalQty:1,phone:'010-5547-2013',sms:true, done:false},
+  {id:12, time:'2시', name:'김가희',vehicles:[{code:'오',qty:1},{code:'코',qty:1}],site:'S',totalQty:2,phone:'010-9432-9927',sms:true,done:false},
+  {id:13, time:'2시', name:'윤지현',vehicles:[{code:'오', qty:1}],site:'NN', totalQty:1,phone:'010-7143-7906',sms:true, done:false},
+  {id:14, time:'2시', name:'이영로',vehicles:[{code:'코"',qty:2}],site:'NN"',totalQty:2,phone:'010-7387-4487',sms:true, done:false},
+  {id:15, time:'9시', name:'한정준',vehicles:[{code:'오', qty:1}],site:'NN', totalQty:1,phone:'010-6680-5771',sms:true, done:true},
+  {id:16, time:'9시', name:'김가현',vehicles:[{code:'오', qty:1}],site:'S',  totalQty:1,phone:'010-7346-7090',sms:true, done:true},
+];
+let newBookings=[
+  {id:101,time:'3시',name:'박서연',vehicles:[{code:'오',qty:2}],site:'S',totalQty:2,phone:'010-1234-5678',sms:false,done:false,isNew:true},
+];
+
+let expanded={}, extraOpen={}, selVehicles=[], nextId=200, showAdd=false;
+let doneOrder=[];
+let walkinList=[], walkinNextId=1000, walkinDoneOrder=[];
+
+// ── 차량 현황 (가용/남은 모두 수동 입력, 서로 영향 없음) ──
+function calcFleet(){
+  // 더 이상 자동 계산하지 않음. 가용/남은 모두 사용자가 직접 입력.
+}
+
+// ── 예약 대수 요약 ──
+function resvSummary(){
+  const active=[...bookings,...newBookings].filter(b=>!b.done);
+  const cnt={pa:0,o:0,ko:0};
+  active.forEach(b=>{
+    b.vehicles.forEach(v=>{
+      const base=v.code.replace('"','');
+      if(base==='파') cnt.pa+=v.qty;
+      else if(base==='오') cnt.o+=v.qty;
+      else if(base==='코') cnt.ko+=v.qty;
+    });
+  });
+  document.getElementById('rv-pa').textContent=cnt.pa;
+  document.getElementById('rv-o').textContent=cnt.o;
+  document.getElementById('rv-ko').textContent=cnt.ko;
+}
+
+function smsCell(b){
+  if(!b.sentSMS) b.sentSMS={};
+  const mainS=SMS.filter(s=>s.main);
+  const extraS=SMS.filter(s=>!s.main);
+  const isOpen=!!extraOpen[b.id];
+  const mainHtml=mainS.map(s=>`<button class="sms-num ${s.cls}${b.sentSMS[s.id]?' sent':''}" title="${s.title}${b.sentSMS[s.id]?' ✓발송':'미발송'}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`).join('');
+  const extraHtml=extraS.map(s=>`<button class="sms-num ${s.cls}${b.sentSMS[s.id]?' sent':''}" title="${s.title}${b.sentSMS[s.id]?' ✓발송':'미발송'}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`).join('');
+  return `<div onclick="event.stopPropagation()">
+    <div class="sms-wrap">
+      <div class="sms-main-btns">${mainHtml}</div>
+      <div class="sms-toggle" onclick="toggleExtra(${b.id})">${isOpen?'▲':'▼'}</div>
+    </div>
+    <div class="sms-extra-row${isOpen?' open':''}">${extraHtml}</div>
+  </div>`;
+}
+
+function autoHyphen(v){
+  v = v.replace(/\D/g,'');
+  if(v.length > 11) v = v.slice(0,11);
+  if(v.length > 7) return v.slice(0,3)+'-'+v.slice(3,7)+'-'+v.slice(7);
+  if(v.length > 3) return v.slice(0,3)+'-'+v.slice(3);
+  return v;
+}
+
+function editCell(id, field, el){
+  const b=[...bookings,...newBookings].find(x=>x.id===id);
+  if(!b) return;
+  const cur = field==='vehicles' ? b.vehicles.map(v=>v.code+(v.qty>1?v.qty:'')).join(' ')
+            : field==='site' ? b.site
+            : b[field];
+  const input = document.createElement('input');
+  input.value = cur;
+  if(field==='phone') input.type='tel';
+  input.style.cssText='font-family:inherit;font-size:inherit;font-weight:inherit;border:none;border-bottom:2px solid #1D9E75;outline:none;background:#fffbe6;width:100%;padding:0;color:inherit;';
+  el.innerHTML='';
+  el.appendChild(input);
+  input.focus(); input.select();
+  if(field==='phone'){
+    input.addEventListener('input', ()=>{ const pos=input.selectionStart; input.value=autoHyphen(input.value); });
+  }
+  function save(){
+    const val = input.value.trim();
+    if(!val){ render(); return; }
+    if(field==='vehicles'){
+      b.vehicles = val.split(/\s+/).map(s=>{
+        const m=s.match(/^([가-힣a-zA-Z"]+)(\d*)$/);
+        return m?{code:m[1],qty:parseInt(m[2])||1}:{code:s,qty:1};
+      });
+      b.totalQty = b.vehicles.reduce((s,v)=>s+v.qty,0);
+    } else if(field==='phone'){
+      b[field] = autoHyphen(val);
+    } else if(field==='site'){
+      b.site = val;
+    } else {
+      b[field] = val;
+    }
+    render();
+  }
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); if(e.key==='Escape'){ render(); } });
+}
+
+function buildTable(list, mode='wait'){
+  if(!list.length) return `<div class="empty">${mode==='new'?'신규 예약 없음':mode==='done'?'완료 없음':'대기 예약 없음'}</div>`;
+  let rows='';
+  let lastTime='';
+  list.forEach(b=>{
+    const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
+    // 시간대 구분선 (완료 섹션 제외)
+    if(mode!=='done' && b.time !== lastTime && lastTime !== ''){
+      rows+=`<tr class="time-sep"><td colspan="7"></td></tr>`;
+    }
+    lastTime=b.time;
+    const editable = mode!=='done';
+    rows+=`
+    <tr class="${b.done?'done':''}">
+      <td onclick="event.stopPropagation()" style="text-align:center">
+        ${mode==='new'
+          ? `<button class="act-icon ok" onclick="moveToWait(${b.id})" title="대기로 올리기">→</button>`
+          : mode==='done'
+          ? `<button class="act-icon undo" onclick="markDone(${b.id})" title="되돌리기">↩</button>`
+          : `<button class="act-icon ok" onclick="markDone(${b.id})" title="완료처리">✓</button>`
+        }
+      </td>
+      <td class="td-time" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'time',this)`:''}">${b.time}</td>
+      <td class="td-name" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'name',this)`:''}">${b.name}${b.isNew&&!b.movedToWait?'<span class="new-bd">NEW</span>':''}</td>
+      <td ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'vehicles',this)`:''}" style="${editable?'cursor:text':''}"><div class="vehicles">${vHtml(b.vehicles)}</div></td>
+      <td class="td-site" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'site',this)`:''}">${si.main}</td>
+      <td class="td-phone" style="font-size:12px;font-weight:700;color:#999;${editable?'cursor:text':''}" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'phone',this)`:''}">${b.phone}</td>
+      <td onclick="event.stopPropagation()">${smsCell(b)}</td>
+    </tr>`;
+  });
+  const hdr = mode==='new'
+    ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th>'
+    : mode==='done'
+    ? '<th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th>'
+    : '<th>완료</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th>';
+  return `<table>
+    <thead><tr>${hdr}</tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function render(){
+  const all=[...bookings,...newBookings];
+  const newList=newBookings.filter(b=>b.isNew&&!b.done&&!b.movedToWait);
+  const timeOrder=['9시','10시','11시','12시','1시','2시','3시','4시','5시','6시','7시','8시'];
+  const waitList=all.filter(b=>!b.done&&(!b.isNew||b.movedToWait))
+    .sort((a,b)=>{
+      const ai=timeOrder.indexOf(a.time), bi=timeOrder.indexOf(b.time);
+      return (ai===-1?99:ai)-(bi===-1?99:bi);
+    });
+  const doneList=doneOrder.map(id=>all.find(b=>b.id===id)).filter(Boolean);
+
+  document.getElementById('new-tbl').innerHTML=buildTable(newList,'new');
+  document.getElementById('active-tbl').innerHTML=buildTable(waitList,'wait');
+  renderDoneTbl();
+  resvSummary();
+
+  const nc=document.getElementById('new-count');
+  if(nc) nc.textContent=newList.length?`${newList.length}건`:'';
+}
+
+function moveToWait(id){
+  const b=[...bookings,...newBookings].find(x=>x.id===id);
+  if(!b) return;
+  b.movedToWait=true;
+  expanded[id]=false;
+  toast(`✅ ${b.name}님 대기로 이동!`);
+  render();
+}
+
+function toggleRow(id){}
+function toggleExtra(id){extraOpen[id]=!extraOpen[id];render()}
+
+function markDone(id){
+  const b=[...bookings,...newBookings].find(x=>x.id===id);
+  if(!b)return;
+  b.done=!b.done;
+  expanded[id]=false;
+  if(b.done){
+    doneOrder.push(id);  // 완료 순서 추가
+  } else {
+    doneOrder=doneOrder.filter(x=>x!==id);  // 되돌리면 순서에서 제거
+  }
+  toast(b.done?`✅ ${b.name}님 완료!`:`↩️ ${b.name}님 되돌렸어요`);
+  updateStats();render();
+}
+
+function doCall(p){window.location.href='tel:'+p.replace(/-/g,'')}
+
+async function sendSMS(id,typeId){
+  const b=[...bookings,...newBookings].find(x=>x.id===id);
+  const t=SMS.find(x=>x.id===typeId);
+  if(!b||!t)return;
+  if(!b.sentSMS) b.sentSMS={};
+  await sendSmsViaGAS(b.phone, t.label, t.title);
+  b.sentSMS[typeId]=true;
+  b.sms=true;
+  render();
+}
+
+// 솔라피 실제 발송 (GAS 경유)
+async function sendSmsViaGAS(phone, settingId, title){
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({ action:'sendSms', phone, settingId: Number(settingId) })
+    });
+    const data = await res.json();
+    if(data.error){
+      toast(`⚠️ [${title}] 발송 실패: ${data.error}`);
+      return false;
+    }
+    toast(`📨 [${title}] 발송 완료!`);
+    return true;
+  }catch(e){
+    toast(`⚠️ [${title}] 발송 실패 (네트워크)`);
+    return false;
+  }
+}
+
+function updateStats(){}
+
+
+function toggleAddForm(){
+  showAdd=!showAdd;
+  document.getElementById('add-form-wrap').style.display=showAdd?'block':'none';
+}
+function toggleV(el){
+  const v=el.dataset.v;
+  if(selVehicles.includes(v)){selVehicles=selVehicles.filter(x=>x!==v);el.className='vsel-chip';}
+  else{
+    selVehicles.push(v);
+    const base=v.replace('"','');
+    el.className='vsel-chip '+(base==='오'?'sel-o':base==='파'?'sel-pa':'sel-ko');
+  }
+}
+function submitBooking(){
+  const time=document.getElementById('f-time').value.trim();
+  const name=document.getElementById('f-name').value.trim();
+  const phone=document.getElementById('f-phone').value.trim();
+  const site=document.getElementById('f-site').value;
+  const qty=parseInt(document.getElementById('f-qty').value)||1;
+  if(!time||!name||!phone||!selVehicles.length){toast('⚠️ 모든 항목 입력해주세요');return;}
+  bookings.push({id:nextId++,time,name,vehicles:selVehicles.map(c=>({code:c,qty})),site,totalQty:qty*selVehicles.length,phone,sms:false,done:false});
+  selVehicles=[];
+  document.querySelectorAll('.vsel-chip').forEach(c=>c.className='vsel-chip');
+  ['f-time','f-name','f-phone'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('f-qty').value='1';
+  toggleAddForm();updateStats();render();
+  toast(`✅ ${name}님 추가됨!`);
+}
+function refreshData(){toast('🔄 새로고침!')}
+
+function setDate(){
+  const d=new Date(),days=['일','월','화','수','목','금','토'];
+  document.getElementById('today-lbl').textContent=`${d.getMonth()+1}/${d.getDate()}(${days[d.getDay()]})`;
+}
+
+let toastTimer;
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2200);
+}
+
+setDate();calcFleet();updateStats();
+loadBookingsFromGAS();
+
+// ── 구글시트(예약자관리, 신규) GAS 연동 ──
+async function loadBookingsFromGAS(){
+  try{
+    const [resB, resN] = await Promise.all([
+      fetch(`${GAS_URL}?action=getBookings`),
+      fetch(`${GAS_URL}?action=getNew`)
+    ]);
+    const dataB = await resB.json();
+    const dataN = await resN.json();
+    if(dataB.error) throw new Error(dataB.error);
+    if(dataN.error) throw new Error(dataN.error);
+
+    // 시트 데이터를 기존 bookings 구조로 변환
+    bookings = (dataB.bookings||[]).map((row,i)=>({
+      id: 1000 + i,
+      time: row.time,
+      name: row.name,
+      vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
+      site: row.channel,
+      totalQty: row.qty || 1,
+      phone: row.phone,
+      sms: row.smsSent || false,
+      done: row.done || false
+    }));
+
+    newBookings = (dataN.newBookings||[]).map((row,i)=>({
+      id: 5000 + i,
+      time: row.time,
+      name: row.name,
+      vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
+      site: row.channel,
+      totalQty: row.qty || 1,
+      phone: row.phone,
+      sms: false,
+      done: false,
+      isNew: true
+    }));
+
+    doneOrder = bookings.filter(b=>b.done).map(b=>b.id);
+    render();
+    toast('✅ 구글시트 연동 완료');
+  }catch(e){
+    console.warn('GAS 연동 실패, 샘플 데이터 사용:', e.message);
+    bookings.filter(b=>b.done).forEach(b=>doneOrder.push(b.id));
+    render();
+  }
+}
+
+// 1분마다 신규예약 자동 갱신 (당일 신규예약 polling)
+setInterval(async ()=>{
+  try{
+    const res = await fetch(`${GAS_URL}?action=getNew`);
+    const data = await res.json();
+    if(data.error) return;
+    const prevCount = newBookings.filter(b=>b.isNew && !b.movedToWait).length;
+    newBookings = (data.newBookings||[]).map((row,i)=>{
+      // 기존 항목이 대기로 이동했었다면 상태 유지
+      const existing = newBookings.find(x=>x.phone===row.phone && x.time===row.time && x.name===row.name);
+      return {
+        id: existing ? existing.id : 5000+i+Date.now()%1000,
+        time: row.time, name: row.name,
+        vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
+        site: row.channel, totalQty: row.qty||1, phone: row.phone,
+        sms: existing ? existing.sms : false,
+        done: existing ? existing.done : false,
+        movedToWait: existing ? existing.movedToWait : false,
+        isNew: true
+      };
+    });
+    const newCount = newBookings.filter(b=>b.isNew && !b.movedToWait).length;
+    if(newCount > prevCount) toast(`🔴 신규예약 ${newCount-prevCount}건 도착!`);
+    render();
+  }catch(e){ /* 조용히 무시 */ }
+}, 60000);
+
+// ── 문자내용 탭 ──
+const SMS_BADGE_COLORS = [
+  {border:'#1D9E75',color:'#1D9E75'},
+  {border:'#0055CC',color:'#0055CC'},
+  {border:'#CC7700',color:'#CC7700'},
+  {border:'#880088',color:'#880088'},
+  {border:'#CC0000',color:'#CC0000'},
+  {border:'#555',   color:'#555'},
+];
+
+let smsSettings = [
+  {id:1, name:'오시는길', body:`안녕하세요, 우도 코코나라입니다.
+
+예약 전·후 반드시 아래 안내페이지를 확인해주세요.
+
+① 실시간 배시간
+② 하우목동항 오시는길
+③ 지도 및 위치안내
+④ 이용방법 및 주의사항
+⑤ 우도 이용 필수안내
+
+모든 안내가 아래 페이지에 정리되어 있습니다.
+https://mementoaicompany-lab.github.io/coconara/
+
+① 코코나라는 "하우목동항"입니다.
+배 탑승 전 반드시 선원분께 "하우목동항 맞나요?" 확인 후 탑승해주세요.
+
+※ 천진항으로 잘못 이동하시는 경우 이용이 매우 어려울 수 있습니다.
+
+② 취소·환불 규정
+* 이용 하루 전까지 100% 취소·환불 가능
+* 당일 취소 및 환불 불가
+* 단, 기상악화로 인한 배 결항 시 100% 환불
+
+정확하고 빠른 안내를 위해 최선을 다하겠습니다.
+좋은날, 좋은인연으로 뵙겠습니다.`},
+  {id:2, name:'지도설명', body:`코코나라를 방문해주셔서 감사합니다.
+
+배시간 / 실시간 운항상황 / 추천코스 / 추천맛집은 아래 페이지에서 바로 확인 가능합니다.
+
+여행 중 하고수동해수욕장 지나실 때, '달콤아재'는 꼭 한번 들러보시면 좋습니다.
+
+코코나라 사장님이 우도 내 여러 업체들을 직접 이용해본 뒤, 유일한 협력업체로 안내드리고 있는 매장입니다.
+특히 우도땅콩아이스크림과 한라봉 아이스크림을 모두 직접 만드는 곳이라, 고객님들 만족도가 정말 높은 곳입니다.
+
+참고로 코코나라 고객님 혜택 비용은 모두 코코나라에서 직접 부담해드리고 있습니다.
+
+https://mementoaicompany-lab.github.io/coconara/`},
+  {id:3, name:'세팅1', body:`안녕하세요, 코코나라입니다.
+
+금일 우도는 정상운항이지만, 오전에 비가 예보되어 있습니다. 현재 예보상 오전 11시까지 비가 이어질 것으로 예상되어, 오픈카를 예약하신 고객님들께서는 가급적 오전 11시 이후 방문을 권장드립니다.
+
+기상 상황에 따라 오픈카 이용이 불편할 수 있으므로, 원하시는 경우 파미(밀폐형 차량)로 변경도 가능합니다. 차량 변경을 원하시는 고객님께서는 본 문자로 회신 부탁드립니다.
+
+또한 방문 시간 변경 혹은 예약 취소를 원하시는 고객님들께서도 본 문자로 회신해 주시면 신속히 안내해 드리겠습니다.
+
+감사합니다.
+코코나라 드림`},
+  {id:4, name:'세팅2', body:`‼️ 코코나라, 긴급알림
+
+안녕하세요, 우도 코코나라입니다.
+
+금일, 예보와 다르게 우천이 진행되고 있습니다.
+
+전기스쿠터(코코) 운행 시 안전사고 우려가 크다고 판단되어, 해당 차량에 한해 부득이하게 이용 취소를 진행하게 되었습니다.
+
+전기스쿠터 특성상 빗길에서 미끄러짐, 제동 거리 증가, 시야 확보 문제 등으로 고객님 안전에 위험이 될 수 있는 상황이라 정상 이용이 어려운 점 양해 부탁드립니다. 🙏
+
+※ 전기차(파미, 오픈카)는 정상 운영 예정입니다.
+
+차량교체 혹은 다른 날짜로 이용을 원하시는 경우, 번거로우시더라도 아래 사이트를 통해 재예약 부탁드립니다. 😊
+
+재예약 네이버 스마트스토어 : https://smartstore.naver.com/udorent
+
+해당 예약 건은 전액 환불로 바로 처리해드리며, 카드사 사정에 따라 영업일 기준 1~2일 정도 소요될 수 있습니다.
+
+불편을 드려 정말 죄송하며, 보다 안전한 날에 다시 뵐 수 있기를 바랍니다. 🌿
+감사합니다.`},
+  {id:5, name:'세팅3', body:`안녕하세요 고객님 ! 금일 방문일이십니다. 대략적으로 몇 시 배 탑승 예정이실까요?`},
+  {id:6, name:'세팅4', body:`안녕하세요 고객님 :) 코코나라입니다! 너무 늦으셔서 연락드립니다. 몇 시 배 탑승 예정이실까요?`},
+];
+
+let memos = [
+  {id:1001, title:'메모 예시', body:'자주 쓰는 문구나 참고사항을 여기에 저장하세요.'},
+];
+let memoNextId = 1002;
+
+let smsOpen = {1:false, 2:false, 3:false, 4:false, 5:false, 6:false};
+let memoOpen = {};
+
+function toggleSms(id){
+  smsOpen[id] = !smsOpen[id];
+  const wrap = document.getElementById(`sms-wrap-${id}`);
+  const arrow = document.getElementById(`sms-arrow-${id}`);
+  if(wrap) wrap.classList.toggle('open', smsOpen[id]);
+  if(arrow) arrow.classList.toggle('open', smsOpen[id]);
+}
+
+function toggleMemo(id){
+  memoOpen[id] = !memoOpen[id];
+  const body = document.getElementById(`memo-body-${id}`);
+  const arrow = document.getElementById(`memo-arrow-${id}`);
+  if(body) body.classList.toggle('open', memoOpen[id]);
+  if(arrow) arrow.classList.toggle('open', memoOpen[id]);
+}
+
+function renderSmsPage(){
+  const cards = smsSettings.map((s,i)=>{
+    const c = SMS_BADGE_COLORS[i] || SMS_BADGE_COLORS[0];
+    const charCount = s.body.length;
+    const isOpen = smsOpen[s.id] !== false;
+    return `<div class="sms-card" id="sms-card-${s.id}">
+      <div class="sms-card-header" onclick="toggleSms(${s.id})">
+        <div class="sms-num-badge" style="border-color:${c.border};color:${c.color}">${s.id}</div>
+        <div class="sms-card-name" onclick="event.stopPropagation()">
+          <input type="text" value="${s.name}" onchange="smsSettings[${i}].name=this.value;syncSmsToMain()" placeholder="세팅 이름">
+        </div>
+        <button class="sms-copy-btn" onclick="event.stopPropagation();copySms(${i})">📋 복사</button>
+        <span class="toggle-arrow${isOpen?' open':''}" id="sms-arrow-${s.id}">▼</span>
+      </div>
+      <div class="sms-card-body-wrap${isOpen?' open':''}" id="sms-wrap-${s.id}">
+        <div class="sms-card-body">
+          <textarea id="sms-body-${s.id}" rows="6" oninput="smsSettings[${i}].body=this.value;updateCharCount(${s.id})">${s.body}</textarea>
+        </div>
+        <div class="sms-card-footer">
+          <span class="sms-char-count" id="sms-char-${s.id}">${charCount}자</span>
+          <button class="sms-save-btn" onclick="saveSms(${i})">저장</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('sms-cards').innerHTML = cards;
+  renderMemos();
+}
+
+function updateCharCount(id){
+  const ta = document.getElementById(`sms-body-${id}`);
+  const el = document.getElementById(`sms-char-${id}`);
+  if(ta && el) el.textContent = ta.value.length + '자';
+}
+
+function copySms(idx){
+  const s = smsSettings[idx];
+  const ta = document.getElementById(`sms-body-${s.id}`);
+  const text = ta ? ta.value : s.body;
+  navigator.clipboard ? navigator.clipboard.writeText(text).then(()=>toast(`📋 [${s.name}] 복사!`)) : toast('복사 지원 안됨');
+}
+
+function saveSms(idx){
+  const s = smsSettings[idx];
+  const ta = document.getElementById(`sms-body-${s.id}`);
+  if(ta) smsSettings[idx].body = ta.value;
+  syncSmsToMain();
+  saveSmsConfigToGAS();
+  toast(`✅ [${s.name}] 저장됨!`);
+}
+
+// ── 문자내용 GAS 연동 ──
+let smsConfigLoaded = false;
+
+async function loadSmsConfigFromGAS(){
+  try{
+    const res = await fetch(`${GAS_URL}?action=getSmsConfig`);
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    if(data.settings && data.settings.length){
+      data.settings.forEach(s=>{
+        const target = smsSettings.find(x=>x.id===s.id);
+        if(target && s.body){ target.name = s.name || target.name; target.body = s.body; }
+      });
+    }
+    if(data.memos && data.memos.length){
+      memos = data.memos.map(m=>{
+        // memo 접두사 제거하여 숫자 id로 복원 (없으면 새 id 발급)
+        const idStr = String(m.id);
+        const numId = idStr.startsWith('memo') ? parseInt(idStr.replace('memo',''),10) : (memoNextId++);
+        return {id: numId || (memoNextId++), title:m.title, body:m.body};
+      });
+      const maxId = Math.max(1000, ...memos.map(m=>m.id));
+      memoNextId = maxId + 1;
+    }
+    syncSmsToMain();
+  }catch(e){
+    console.warn('문자내용 GAS 로드 실패, 기본값 사용:', e.message);
+  } finally {
+    smsConfigLoaded = true;
+    renderSmsPage();
+  }
+}
+
+async function saveSmsConfigToGAS(){
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({
+        action:'saveSmsConfig',
+        settings: smsSettings.map(s=>({id:s.id, name:s.name, body:s.body})),
+        memos: memos.map(m=>({id:'memo'+m.id, title:m.title, body:m.body}))
+      })
+    });
+    const data = await res.json();
+    if(data.error){ toast('⚠️ 저장 실패: '+data.error); return false; }
+    return true;
+  }catch(e){
+    console.warn('문자내용 GAS 저장 실패:', e.message);
+    toast('⚠️ 메모 저장 실패 (네트워크/연결 오류)');
+    return false;
+  }
+}
+
+function syncSmsToMain(){
+  // 예약관리탭 SMS 배열과 동기화
+  SMS.forEach((m,i)=>{
+    if(smsSettings[i]){
+      const body = smsSettings[i].body;
+      m.title = smsSettings[i].name;
+      m.msg = ()=>body;
+    }
+  });
+}
+
+function saveMemoNow(id){
+  const ta = document.getElementById(`memo-text-${id}`);
+  const m = memos.find(x=>x.id===id);
+  if(!m) return;
+  if(ta) m.body = ta.value;
+  saveSmsConfigToGAS().then(ok=>{
+    if(ok) toast(`✅ [${m.title}] 메모 저장됨!`);
+  });
+}
+
+function renderMemos(){
+  if(!memos.length){
+    document.getElementById('memo-list').innerHTML='<div style="text-align:center;padding:20px;color:#bbb;font-size:12px">메모가 없습니다</div>';
+    return;
+  }
+  document.getElementById('memo-list').innerHTML = memos.map(m=>{
+    if(memoOpen[m.id]===undefined) memoOpen[m.id]=false;
+    const isOpen = memoOpen[m.id];
+    return `<div class="memo-card" id="memo-${m.id}">
+      <div class="memo-card-header" onclick="toggleMemo(${m.id})">
+        <input class="memo-title-input" type="text" value="${m.title}" placeholder="제목"
+          onclick="event.stopPropagation()"
+          onchange="updateMemo(${m.id},'title',this.value)">
+        <button class="memo-del-btn" onclick="event.stopPropagation();deleteMemo(${m.id})">삭제</button>
+        <span class="toggle-arrow${isOpen?' open':''}" id="memo-arrow-${m.id}">▼</span>
+      </div>
+      <div class="memo-card-body${isOpen?' open':''}" id="memo-body-${m.id}">
+        <textarea id="memo-text-${m.id}" rows="4" placeholder="내용을 입력하세요...">${m.body}</textarea>
+        <div class="memo-card-footer">
+          <button class="sms-save-btn" onclick="saveMemoNow(${m.id})">저장</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addMemo(){
+  memos.push({id:memoNextId++, title:'새 메모', body:''});
+  renderMemos();
+  saveSmsConfigToGAS();
+  toast('메모 추가됨');
+}
+function deleteMemo(id){
+  memos = memos.filter(m=>m.id!==id);
+  renderMemos();
+  saveSmsConfigToGAS();
+}
+function updateMemo(id, field, val){
+  const m = memos.find(x=>x.id===id);
+  if(m){
+    m[field] = val;
+    saveSmsConfigToGAS().then(ok=>{ if(ok) toast('✅ 저장됨'); });
+  }
+}
+
+// ── 현장손님 ──
+
+function formatWalkinPhone(el){
+  let v=el.value.replace(/\D/g,'');
+  if(v.length>11) v=v.slice(0,11);
+  if(v.length>7) v=v.slice(0,3)+'-'+v.slice(3,7)+'-'+v.slice(7);
+  else if(v.length>3) v=v.slice(0,3)+'-'+v.slice(3);
+  el.value=v;
+}
+
+function addWalkinInline(){
+  const el = document.getElementById('walkin-phone-inline');
+  const phone = el.value.trim();
+  if(!phone){ toast('⚠️ 연락처를 입력해주세요'); return; }
+  if(walkinList.find(w=>w.phone===phone&&!w.done)){
+    toast('이미 추가된 연락처예요'); return;
+  }
+  walkinList.push({id:walkinNextId++, phone, time:nowTime(), sentSms:{}, done:false});
+  el.value='';
+  renderWalkinTbl();
+  renderDoneTbl();
+  toast(`✅ ${phone} 추가됨!`);
+}
+
+function nowTime(){
+  const d=new Date(), h=d.getHours(), m=String(d.getMinutes()).padStart(2,'0');
+  return `${h}시${m}`;
+}
+
+async function sendWalkinSmsRow(id, smsId){
+  const w = walkinList.find(x=>x.id===id);
+  const t = SMS.find(x=>x.id===smsId);
+  if(!w||!t) return;
+  await sendSmsViaGAS(w.phone, t.label, t.title);
+  if(!w.sentSms) w.sentSms={};
+  w.sentSms[smsId] = true;
+  renderWalkinTbl();
+}
+
+function markWalkinDone(id){
+  const w = walkinList.find(x=>x.id===id);
+  if(!w) return;
+  w.done = !w.done;
+  if(w.done){ walkinDoneOrder.push(id); }
+  else { walkinDoneOrder = walkinDoneOrder.filter(x=>x!==id); }
+  renderWalkinTbl();
+  renderDoneTbl();
+  toast(w.done?'✅ 완료처리':'↩️ 되돌렸어요');
+}
+
+function renderWalkinTbl(){
+  const colors=[{b:'#1D9E75',c:'#1D9E75'},{b:'#0055CC',c:'#0055CC'},{b:'#CC7700',c:'#CC7700'},{b:'#880088',c:'#880088'},{b:'#CC0000',c:'#CC0000'},{b:'#555',c:'#555'}];
+  const active = walkinList.filter(w=>!w.done);
+  const el = document.getElementById('walkin-tbl');
+  if(!active.length){ el.innerHTML='<div class="empty">현장손님 없음</div>'; return; }
+  const rows = active.map(w=>{
+    const btns = SMS.map((s,i)=>{
+      const c=colors[i]||colors[0];
+      const sent=!!(w.sentSms&&w.sentSms[s.id]);
+      return `<span class="sms-num" style="width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid ${c.b};color:${sent?'#fff':c.c};background:${sent?c.b:'#fff'};font-size:11px;font-weight:800;cursor:pointer;margin-right:2px" onclick="sendWalkinSmsRow(${w.id},'${s.id}')" title="${s.title}">${s.label}</span>`;
+    }).join('');
+    return `<tr class="walkin-row">
+      <td onclick="event.stopPropagation()" style="text-align:center">
+        <button class="act-icon ok" onclick="markWalkinDone(${w.id})" title="완료처리">✓</button>
+      </td>
+      <td class="td-time">${w.time}</td>
+      <td class="td-name" style="color:#E87700;font-weight:900">현장</td>
+      <td>—</td><td>—</td>
+      <td class="td-phone">${w.phone}</td>
+      <td onclick="event.stopPropagation()"><div style="display:flex;gap:0;flex-wrap:nowrap;align-items:center">${btns}</div></td>
+    </tr>`;
+  }).join('');
+  el.innerHTML=`<table><thead><tr><th>완료</th><th>시간</th><th>구분</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// 완료 섹터 렌더 (예약 완료 + 현장손님 완료 합산)
+function renderDoneTbl(){
+  const all=[...bookings,...newBookings];
+  const resvDone = doneOrder.map(id=>all.find(b=>b.id===id)).filter(Boolean);
+  const walkinDone = walkinDoneOrder.map(id=>walkinList.find(w=>w.id===id)).filter(Boolean);
+  const el = document.getElementById('done-tbl');
+
+  if(!resvDone.length && !walkinDone.length){
+    el.innerHTML='<div class="empty">완료 없음</div>';
+    const dc=document.getElementById('done-count');
+    if(dc) dc.textContent='';
+    return;
+  }
+
+  // 현장손님 행 — smsCell과 동일한 구조로 맞춤
+  const walkinRows = walkinDone.map(w=>{
+    // sentSms 객체를 b처럼 흉내
+    const fakeB = {id:w.id, done:true, sentSms:w.sentSms||{}, isNew:false, movedToWait:false};
+    const smsCellHtml = smsCell(fakeB);
+    return `<tr class="done walkin-row">
+      <td onclick="event.stopPropagation()" style="text-align:center">
+        <button class="act-icon undo" onclick="markWalkinDone(${w.id})" title="되돌리기">↩</button>
+      </td>
+      <td class="td-time">${w.time}</td>
+      <td class="td-name" style="color:#E87700;font-weight:900">현장</td>
+      <td>—</td><td>—</td>
+      <td class="td-phone">${w.phone}</td>
+      <td onclick="event.stopPropagation()">${smsCellHtml}</td>
+    </tr>`;
+  }).join('');
+
+  // 예약완료 + 현장완료 하나의 테이블로
+  const thead = `<thead><tr><th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th></tr></thead>`;
+  const resvRows = resvDone.map(b=>{
+    const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
+    return `<tr class="done">
+      <td onclick="event.stopPropagation()" style="text-align:center">
+        <button class="act-icon undo" onclick="markDone(${b.id})" title="되돌리기">↩</button>
+      </td>
+      <td class="td-time">${b.time}</td>
+      <td class="td-name">${b.name}</td>
+      <td><div class="vehicles">${vHtml(b.vehicles)}</div></td>
+      <td class="td-site">${si.main}</td>
+      <td class="td-phone" style="font-size:12px;font-weight:700;color:#999">${b.phone}</td>
+      <td onclick="event.stopPropagation()">${smsCell(b)}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<table>${thead}<tbody>${resvRows}${walkinRows}</tbody></table>`;
+  const dc=document.getElementById('done-count');
+  if(dc) dc.textContent=`${resvDone.length+walkinDone.length}건`;
+}
+function switchPage(name, el){
+  document.querySelectorAll('.page-tab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.page-content').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('page-'+name).classList.add('on');
+  if(name==='stats') loadStats();
+  if(name==='sms'){ if(!smsConfigLoaded) loadSmsConfigFromGAS(); else renderSmsPage(); }
+}
+
+// ── 차량통계 ──
+// ===== Google Apps Script 웹앱 URL (구글시트 ↔ 홈페이지 연동) =====
+// (선언은 파일 상단으로 이동함)
+
+let statsData=[];
+
+async function loadStats(){
+  document.getElementById('stats-table').innerHTML='<div style="text-align:center;padding:20px;color:#bbb;font-size:12px">구글시트 연동 중...</div>';
+  try{
+    const res=await fetch(`${GAS_URL}?action=getStats`);
+    if(!res.ok) throw new Error();
+    const data=await res.json();
+    if(data.error) throw new Error(data.error);
+    statsData = data.stats || [];
+    renderStats();
+    document.getElementById('sync-info').textContent=`마지막 업데이트: ${new Date().toLocaleTimeString('ko-KR')}`;
+  }catch(e){
+    useSampleStats();
+    document.getElementById('sync-info').textContent='⚠️ 시트 연결 실패 — 샘플 표시 (' + e.message + ')';
+  }
+}
+
+function useSampleStats(){
+  statsData=[
+    {date:'2026년 6월 11일 (목)',pa:6, o:6, ko:4},
+    {date:'2026년 6월 12일 (금)',pa:5, o:11,ko:3},
+    {date:'2026년 6월 13일 (토)',pa:3, o:7, ko:3},
+    {date:'2026년 6월 14일 (일)',pa:3, o:10,ko:5},
+    {date:'2026년 6월 15일 (월)',pa:0, o:4, ko:0},
+    {date:'2026년 6월 16일 (화)',pa:3, o:1, ko:9},
+    {date:'2026년 6월 17일 (수)',pa:1, o:0, ko:1},
+    {date:'2026년 6월 18일 (목)',pa:0, o:0, ko:13},
+    {date:'2026년 6월 19일 (금)',pa:0, o:1, ko:2},
+    {date:'2026년 6월 20일 (토)',pa:6, o:3, ko:3},
+    {date:'2026년 6월 21일 (일)',pa:1, o:4, ko:0},
+    {date:'2026년 6월 22일 (월)',pa:1, o:3, ko:0},
+    {date:'2026년 6월 25일 (목)',pa:3, o:1, ko:0},
+    {date:'2026년 6월 27일 (토)',pa:2, o:3, ko:1},
+    {date:'2026년 6월 28일 (일)',pa:1, o:3, ko:0},
+  ];
+  renderStats();
+}
+
+function renderStats(){
+  if(!statsData.length)return;
+  const d=new Date();
+  const todayPrefix=`${d.getFullYear()}년 ${d.getMonth()+1}월 ${d.getDate()}일`;
+  const maxVal=Math.max(...statsData.map(r=>r.pa+r.o+r.ko),1);
+
+  // 가용 대수
+  const capPa=parseInt(document.getElementById('cap-pa').value)||35;
+  const capO =parseInt(document.getElementById('cap-o').value)||22;
+  const capKo=parseInt(document.getElementById('cap-ko').value)||50;
+
+  // 차트 — 날짜별 3행 그룹
+  // 테이블
+  function cellHtml(v, cap, colorCls){
+    const p = Math.min(Math.round(v/cap*100),100);
+    const isHi   = p >= 70;
+    const isMid  = p >= 50 && p < 70;
+    let bg = '';
+    if(isHi)       bg = 'background:#FFF3B0';
+    else if(isMid) bg = 'background:#FFF3B0';
+    const pColor = isHi?'#CC0000':isMid?'#996600':'#aaa';
+    return `<td style="${bg};padding:4px 8px">
+      <span class="${colorCls}">${v}</span>
+      <span style="font-size:9px;font-weight:700;color:${pColor};margin-left:3px">${p}%</span>
+      ${isHi?'<span class="warn-dot"></span>':''}
+    </td>`;
+  }
+  // 2026년 공휴일 목록 (월-1, 일)
+  const HOLIDAYS = {
+    '1-1':'신정','3-1':'삼일절','5-5':'어린이날','6-6':'현충일',
+    '8-15':'광복절','10-3':'개천절','10-9':'한글날','12-25':'성탄절',
+    '1-29':'설연휴','1-28':'설연휴','1-30':'설연휴',
+    '5-6':'어린이날대체','9-25':'추석연휴','9-26':'추석연휴','9-27':'추석연휴','9-28':'추석연휴'
+  };
+  const rows=statsData.map(r=>{
+    const isT=r.date.startsWith(todayPrefix);
+    const short=r.date.replace(/\d{4}년 /,'').replace(/ \(.\)/,'');
+    const dow=r.date.match(/\((.)\)/)?.[1]||'';
+    const rowWarn=(r.pa/capPa>=0.7)||(r.o/capO>=0.7)||(r.ko/capKo>=0.7);
+    // 날짜 파싱으로 주말/공휴일 판단
+    const mMatch=r.date.match(/(\d+)월 (\d+)일/);
+    const isSat=dow==='토', isSun=dow==='일';
+    const hKey=mMatch?`${parseInt(mMatch[1])-1}-${mMatch[2]}`:null;
+    const holiday=hKey?HOLIDAYS[hKey]:null;
+    let dayBadge='';
+    if(holiday)      dayBadge=`<span class="day-badge day-holiday">공휴</span>`;
+    else if(isSat)   dayBadge=`<span class="day-badge day-sat">토</span>`;
+    else if(isSun)   dayBadge=`<span class="day-badge day-sun">일</span>`;
+    return `<tr class="${isT?'stats-table-today':''}${isSat?' row-sat':''}${isSun?' row-sun':''}${holiday?' row-holiday':''}">
+      <td>${short}(${dow})${dayBadge}${isT?'<span class="today-badge">오늘</span>':''}${rowWarn?'<span class="warn-badge">⚠️</span>':''}</td>
+      ${cellHtml(r.pa,capPa,'td-pa')}
+      ${cellHtml(r.o, capO, 'td-o')}
+      ${cellHtml(r.ko,capKo,'td-ko')}
+    </tr>`;
+  }).join('');
+  document.getElementById('stats-table').innerHTML=`
+    <table>
+      <thead><tr>
+        <th style="text-align:left">날짜</th>
+        <th style="color:#ccc">파미</th>
+        <th style="color:#f99">오픈카</th>
+        <th style="color:#88aaff">코코</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+</script>
+</body>
+</html>
