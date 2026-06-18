@@ -529,7 +529,7 @@ let bulkSelected=new Set();
 let searchQuery='';
 let waitCustomOrder=[]; // 대기 목록 드래그로 직접 지정한 순서 (id 배열)
 let dragSrcId=null;
-let walkinList=[], walkinNextId=1000, walkinDoneOrder=[];
+let walkinList=[], walkinNextId=9000, walkinDoneOrder=[];
 
 // ── 차량 현황 (가용/남은 모두 수동 입력, 서로 영향 없음) ──
 function calcFleet(){
@@ -1572,10 +1572,13 @@ function renderDoneTbl(filteredList){
   }
 
   // 현장손님 행 — smsCell과 동일한 구조로 맞춤
+  const walkinSmsColors=[{b:'#1D9E75',c:'#1D9E75'},{b:'#0055CC',c:'#0055CC'},{b:'#CC7700',c:'#CC7700'},{b:'#880088',c:'#880088'},{b:'#CC0000',c:'#CC0000'},{b:'#555',c:'#555'}];
   const walkinRows = walkinDone.map(w=>{
-    // sentSms 객체를 b처럼 흉내
-    const fakeB = {id:w.id, done:true, sentSms:w.sentSms||{}, isNew:false, movedToWait:false};
-    const smsCellHtml = smsCell(fakeB);
+    const btns = SMS.map((s,i)=>{
+      const c=walkinSmsColors[i]||walkinSmsColors[0];
+      const sent=!!(w.sentSms&&w.sentSms[s.id]);
+      return `<span class="sms-num" style="width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid ${c.b};color:${sent?'#fff':c.c};background:${sent?c.b:'#fff'};font-size:11px;font-weight:800;cursor:pointer;margin-right:2px" onclick="sendWalkinSmsRow(${w.id},'${s.id}')" title="${s.title}">${s.label}</span>`;
+    }).join('');
     return `<tr class="done walkin-row">
       <td onclick="event.stopPropagation()" style="text-align:center">
         <button class="act-icon undo" onclick="markWalkinDone(${w.id})" title="되돌리기">↩</button>
@@ -1584,7 +1587,7 @@ function renderDoneTbl(filteredList){
       <td class="td-name" style="color:#E87700;font-weight:900">현장</td>
       <td>—</td><td>—</td>
       <td class="td-phone">${w.phone}</td>
-      <td onclick="event.stopPropagation()">${smsCellHtml}</td>
+      <td onclick="event.stopPropagation()"><div style="display:flex;gap:0;flex-wrap:nowrap;align-items:center">${btns}</div></td>
       <td>—</td>
       <td onclick="event.stopPropagation()" style="text-align:center"><button class="act-icon del" onclick="deleteWalkinFromDone(${w.id})" title="영구 삭제">✕</button></td>
     </tr>`;
