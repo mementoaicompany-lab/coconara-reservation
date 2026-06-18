@@ -1392,11 +1392,13 @@ function addWalkinInline(){
   if(walkinList.find(w=>w.phone===phone&&!w.done)){
     toast('이미 추가된 연락처예요'); return;
   }
-  walkinList.push({id:walkinNextId++, phone, time:nowTime(), sentSms:{}, done:false});
+  const time = nowTime();
+  walkinList.push({id:walkinNextId++, phone, time, sentSms:{}, done:false});
   el.value='';
   renderWalkinTbl();
   renderDoneTbl();
   toast(`✅ ${phone} 추가됨!`);
+  saveStatusToGAS('walkin|'+phone+'|'+time, 'wait');
 }
 
 function nowTime(){
@@ -1408,9 +1410,12 @@ async function sendWalkinSmsRow(id, smsId){
   const w = walkinList.find(x=>x.id===id);
   const t = SMS.find(x=>x.id===smsId);
   if(!w||!t) return;
-  await sendSmsViaGAS(w.phone, t.label, t.title);
-  if(!w.sentSms) w.sentSms={};
-  w.sentSms[smsId] = true;
+  const ok = await sendSmsViaGAS(w.phone, t.label, t.title);
+  if(ok){
+    if(!w.sentSms) w.sentSms={};
+    w.sentSms[smsId] = true;
+    saveStatusToGAS('walkin|'+w.phone+'|'+w.time, undefined, {sentSms:{[t.label]:true}});
+  }
   renderWalkinTbl();
 }
 
