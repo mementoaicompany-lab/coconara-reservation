@@ -76,6 +76,7 @@ td{padding:2px 6px;vertical-align:middle;white-space:nowrap;line-height:1.1}
 .td-time{font-size:13px;font-weight:900;color:#777}
 .td-name{font-size:13px;font-weight:900;color:#111}
 .new-bd{font-size:9px;font-weight:800;background:#E24B4A;color:#fff;padding:1px 4px;border-radius:3px;margin-left:2px;animation:blink 1.2s infinite}
+.amount-bd{font-size:9px;font-weight:700;background:#eef6f0;color:#1D9E75;padding:1px 4px;border-radius:3px;margin-left:3px}
 
 /* 차량 텍스트 */
 .vehicles{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
@@ -115,6 +116,35 @@ td{padding:2px 6px;vertical-align:middle;white-space:nowrap;line-height:1.1}
 .act-icon.ok:hover{background:#1D9E75;color:#fff}
 .act-icon.undo{border-color:#E24B4A;color:#E24B4A}
 .act-icon.undo:hover{background:#fdecea}
+.act-icon.del{border-color:#999;color:#999}
+.act-icon.del:hover{background:#999;color:#fff}
+
+.td-memo{font-size:11px;color:#666;cursor:text;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.memo-empty{color:#ccc;font-weight:700}
+
+.search-wrap{padding:8px 10px 2px}
+.search-wrap input{width:100%;box-sizing:border-box;border:1.5px solid #ddd;border-radius:8px;padding:7px 10px;font-size:13px;font-family:inherit;outline:none}
+.search-wrap input:focus{border-color:#1D9E75}
+
+.bulk-bar{align-items:center;gap:8px;padding:6px 10px;background:#fffbe6;border-bottom:1px solid #f0e6b0;font-size:11px;flex-wrap:wrap}
+.bulk-bar .bulk-count{font-weight:800;color:#7a6a00}
+.bulk-sms-btns{display:flex;gap:4px;flex-wrap:wrap}
+.bulk-sms-btn{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;border:1.5px solid #1D9E75;color:#1D9E75;background:#fff;cursor:pointer}
+.bulk-sms-btn:hover{background:#1D9E75;color:#fff}
+
+tr.dragging{opacity:0.4}
+tr[draggable="true"]{cursor:grab}
+
+.sec-opmemo{border-top:2px solid #ddd;margin-top:10px}
+#op-memo-list{padding:6px 10px 14px;display:flex;flex-direction:column;gap:8px}
+.op-memo-card{border:1px solid #e5e5e5;border-radius:8px;padding:8px}
+.op-memo-head{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.op-memo-title{flex:1;border:none;border-bottom:1.5px solid #eee;font-size:12px;font-weight:800;padding:2px 0;outline:none}
+.op-memo-title:focus{border-color:#1D9E75}
+.op-memo-del{border:none;background:none;color:#bbb;cursor:pointer;font-size:12px}
+.op-memo-del:hover{color:#E24B4A}
+.op-memo-body{width:100%;box-sizing:border-box;border:1px solid #eee;border-radius:6px;padding:6px;font-size:12px;font-family:inherit;resize:vertical;outline:none}
+.op-memo-body:focus{border-color:#1D9E75}
 
 .sec{display:flex;align-items:center;gap:6px;padding:7px 10px 4px;font-size:12px;font-weight:900;color:#111;letter-spacing:0.02em}
 .sec-line{flex:1;height:1px;background:#ddd}
@@ -299,18 +329,18 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
   <div class="fleet-card">
     <div class="fc-group">
       <div class="fc-name fc-pa">파미</div>
-      <div class="fc-row"><span class="fc-label">가용</span><input class="v-pa" type="number" id="fl-pa-avail" value="8" min="0" onclick="this.select()"></div>
-      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-pa" type="number" id="fl-pa-rem" value="8" min="0" onclick="this.select()"></div>
+      <div class="fc-row"><span class="fc-label">가용</span><input class="v-pa" type="number" id="fl-pa-avail" value="8" min="0" onclick="this.select()" onchange="saveFleetToGAS('pa','avail',this.value)"></div>
+      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-pa" type="number" id="fl-pa-rem" value="8" min="0" onclick="this.select()" onchange="saveFleetToGAS('pa','remain',this.value)"></div>
     </div>
     <div class="fc-group">
       <div class="fc-name fc-o">오픈카</div>
-      <div class="fc-row"><span class="fc-label">가용</span><input class="v-o" type="number" id="fl-o-avail" value="12" min="0" onclick="this.select()"></div>
-      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-o" type="number" id="fl-o-rem" value="12" min="0" onclick="this.select()"></div>
+      <div class="fc-row"><span class="fc-label">가용</span><input class="v-o" type="number" id="fl-o-avail" value="12" min="0" onclick="this.select()" onchange="saveFleetToGAS('o','avail',this.value)"></div>
+      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-o" type="number" id="fl-o-rem" value="12" min="0" onclick="this.select()" onchange="saveFleetToGAS('o','remain',this.value)"></div>
     </div>
     <div class="fc-group">
       <div class="fc-name fc-ko">코코</div>
-      <div class="fc-row"><span class="fc-label">가용</span><input class="v-ko" type="number" id="fl-ko-avail" value="6" min="0" onclick="this.select()"></div>
-      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-ko" type="number" id="fl-ko-rem" value="6" min="0" onclick="this.select()"></div>
+      <div class="fc-row"><span class="fc-label">가용</span><input class="v-ko" type="number" id="fl-ko-avail" value="6" min="0" onclick="this.select()" onchange="saveFleetToGAS('ko','avail',this.value)"></div>
+      <div class="fc-row fc-rem"><span class="fc-label">남은</span><input class="v-ko" type="number" id="fl-ko-rem" value="6" min="0" onclick="this.select()" onchange="saveFleetToGAS('ko','remain',this.value)"></div>
     </div>
   </div>
 </div>
@@ -350,6 +380,11 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
     </div>
   </div>
 
+  <!-- 검색창 -->
+  <div class="search-wrap">
+    <input id="search-input" type="text" placeholder="🔍 이름 또는 연락처 검색" oninput="onSearchInput(this.value)">
+  </div>
+
   <!-- 1. 신규 -->
   <div class="sec sec-new"><span>신규</span><div class="sec-line"></div><span id="new-count" class="sec-count"></span></div>
   <div class="tbl-wrap"><div id="new-tbl"></div></div>
@@ -360,6 +395,17 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
     <span class="resv-bar-item rbi-o">오픈카 <strong id="rv-o">0</strong></span>
     <span class="resv-bar-item rbi-ko">코코 <strong id="rv-ko">0</strong></span>
     <div class="sec-line"></div>
+  </div>
+  <div id="bulk-bar" class="bulk-bar" style="display:none">
+    <span class="bulk-count">0명 선택됨</span>
+    <div class="bulk-sms-btns">
+      <button class="bulk-sms-btn" onclick="bulkSendSms('s1')">1번 발송</button>
+      <button class="bulk-sms-btn" onclick="bulkSendSms('s2')">2번 발송</button>
+      <button class="bulk-sms-btn" onclick="bulkSendSms('s3')">3번 발송</button>
+      <button class="bulk-sms-btn" onclick="bulkSendSms('s4')">4번 발송</button>
+      <button class="bulk-sms-btn" onclick="bulkSendSms('s5')">5번 발송</button>
+      <button class="bulk-sms-btn" onclick="bulkSendSms('s6')">6번 발송</button>
+    </div>
   </div>
   <div class="tbl-wrap"><div id="active-tbl"></div></div>
 
@@ -377,9 +423,11 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
   <!-- 4. 완료 -->
   <div class="sec sec-done"><span>완료</span><div class="sec-line"></div><span id="done-count" class="sec-count"></span></div>
   <div class="tbl-wrap"><div id="done-tbl"></div></div>
+
+  <!-- 5. 운영 메모 -->
+  <div class="sec sec-opmemo"><span>메모</span><div class="sec-line"></div><button class="btn-sm" onclick="addOpMemo()" style="font-size:10px;padding:2px 8px">＋ 추가</button></div>
+  <div id="op-memo-list"></div>
 </div>
-
-
 
 </div><!-- /page-resv -->
 
@@ -477,11 +525,28 @@ let newBookings=[
 
 let expanded={}, extraOpen={}, selVehicles=[], nextId=200, showAdd=false;
 let doneOrder=[];
+let bulkSelected=new Set();
+let searchQuery='';
+let waitCustomOrder=[]; // 대기 목록 드래그로 직접 지정한 순서 (id 배열)
+let dragSrcId=null;
 let walkinList=[], walkinNextId=1000, walkinDoneOrder=[];
 
 // ── 차량 현황 (가용/남은 모두 수동 입력, 서로 영향 없음) ──
 function calcFleet(){
   // 더 이상 자동 계산하지 않음. 가용/남은 모두 사용자가 직접 입력.
+}
+
+async function saveFleetToGAS(vehicle, field, value){
+  try{
+    const body = { action:'setFleet', vehicle };
+    body[field] = Number(value)||0;
+    const res = await fetch(GAS_URL, { method:'POST', body: JSON.stringify(body) });
+    const data = await res.json();
+    if(data.error) toast('⚠️ 차량현황 저장 실패: '+data.error);
+  }catch(e){
+    console.warn('차량현황 저장 실패:', e.message);
+    toast('⚠️ 차량현황 저장 네트워크 오류');
+  }
 }
 
 // ── 예약 대수 요약 ──
@@ -563,6 +628,26 @@ function editCell(id, field, el){
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); if(e.key==='Escape'){ render(); } });
 }
 
+function editMemoCell(id, el){
+  const b=[...bookings,...newBookings].find(x=>x.id===id);
+  if(!b) return;
+  const input = document.createElement('input');
+  input.value = b.memo || '';
+  input.placeholder = '메모 입력...';
+  input.style.cssText='font-family:inherit;font-size:12px;border:none;border-bottom:2px solid #1D9E75;outline:none;background:#fffbe6;width:100%;padding:0;color:inherit;';
+  el.innerHTML='';
+  el.appendChild(input);
+  input.focus(); input.select();
+  function save(){
+    const val = input.value.trim();
+    b.memo = val;
+    saveStatusToGAS(statusKey(b), undefined, {memo: val});
+    render();
+  }
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); if(e.key==='Escape'){ render(); } });
+}
+
 function buildTable(list, mode='wait'){
   if(!list.length) return `<div class="empty">${mode==='new'?'신규 예약 없음':mode==='done'?'완료 없음':'대기 예약 없음'}</div>`;
   let rows='';
@@ -571,12 +656,14 @@ function buildTable(list, mode='wait'){
     const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
     // 시간대 구분선 (완료 섹션 제외)
     if(mode!=='done' && b.time !== lastTime && lastTime !== ''){
-      rows+=`<tr class="time-sep"><td colspan="7"></td></tr>`;
+      rows+=`<tr class="time-sep"><td colspan="9"></td></tr>`;
     }
     lastTime=b.time;
     const editable = mode!=='done';
+    const memoVal = (b.memo||'').replace(/"/g,'&quot;');
     rows+=`
-    <tr class="${b.done?'done':''}">
+    <tr class="${b.done?'done':''}"${mode==='wait'?` draggable="true" data-id="${b.id}" ondragstart="dragStart(event,${b.id})" ondragover="dragOver(event)" ondrop="dragDrop(event,${b.id})" ondragend="dragEnd(event)"`:''}>
+      ${mode==='wait'?`<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="bulk-chk" data-id="${b.id}" ${bulkSelected.has(b.id)?'checked':''} onchange="toggleBulkSel(${b.id},this.checked)"></td>`:''}
       <td onclick="event.stopPropagation()" style="text-align:center">
         ${mode==='new'
           ? `<button class="act-icon ok" onclick="moveToWait(${b.id})" title="대기로 올리기">→</button>`
@@ -586,18 +673,20 @@ function buildTable(list, mode='wait'){
         }
       </td>
       <td class="td-time" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'time',this)`:''}">${b.time}</td>
-      <td class="td-name" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'name',this)`:''}">${b.name}${b.isNew&&!b.movedToWait?'<span class="new-bd">NEW</span>':''}</td>
+      <td class="td-name" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'name',this)`:''}">${b.name}${b.isNew&&!b.movedToWait?'<span class="new-bd">NEW</span>':''}${b.amount?`<span class="amount-bd">${Number(b.amount).toLocaleString()}원</span>`:''}</td>
       <td ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'vehicles',this)`:''}" style="${editable?'cursor:text':''}"><div class="vehicles">${vHtml(b.vehicles)}</div></td>
       <td class="td-site" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'site',this)`:''}">${si.main}</td>
       <td class="td-phone" style="font-size:12px;font-weight:700;color:#999;${editable?'cursor:text':''}" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'phone',this)`:''}">${b.phone}</td>
       <td onclick="event.stopPropagation()">${smsCell(b)}</td>
+      <td class="td-memo" ondblclick="event.stopPropagation();editMemoCell(${b.id},this)" title="더블클릭해서 메모 입력">${memoVal||'<span class="memo-empty">+</span>'}</td>
+      ${mode==='done'?`<td onclick="event.stopPropagation()" style="text-align:center"><button class="act-icon del" onclick="deleteBookingFromDone(${b.id})" title="영구 삭제">✕</button></td>`:''}
     </tr>`;
   });
   const hdr = mode==='new'
-    ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th>'
+    ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>'
     : mode==='done'
-    ? '<th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th>'
-    : '<th>완료</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th>';
+    ? '<th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th><th>삭제</th>'
+    : '<th><input type="checkbox" id="bulk-all-chk" onchange="toggleBulkAll(this.checked)" title="전체선택"></th><th>완료</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>';
   return `<table>
     <thead><tr>${hdr}</tr></thead>
     <tbody>${rows}</tbody>
@@ -606,22 +695,35 @@ function buildTable(list, mode='wait'){
 
 function render(){
   const all=[...bookings,...newBookings];
-  const newList=newBookings.filter(b=>b.isNew&&!b.done&&!b.movedToWait);
+  let newList=newBookings.filter(b=>b.isNew&&!b.done&&!b.movedToWait);
   const timeOrder=['9시','10시','11시','12시','1시','2시','3시','4시','5시','6시','7시','8시'];
-  const waitList=all.filter(b=>!b.done&&(!b.isNew||b.movedToWait))
+  let waitList=all.filter(b=>!b.done&&(!b.isNew||b.movedToWait))
     .sort((a,b)=>{
+      // 드래그로 직접 지정한 순서가 있으면 그것을 우선
+      const ci=waitCustomOrder.indexOf(a.id), cj=waitCustomOrder.indexOf(b.id);
+      if(ci!==-1 && cj!==-1) return ci-cj;
       const ai=timeOrder.indexOf(a.time), bi=timeOrder.indexOf(b.time);
       return (ai===-1?99:ai)-(bi===-1?99:bi);
     });
-  const doneList=doneOrder.map(id=>all.find(b=>b.id===id)).filter(Boolean);
+  let doneList=doneOrder.map(id=>all.find(b=>b.id===id)).filter(Boolean);
+
+  // 검색 필터 (이름/연락처) - 전체 섹션에 공통 적용
+  if(searchQuery.trim()){
+    const q = searchQuery.trim().replace(/-/g,'');
+    const matchFn = b => b.name.includes(searchQuery.trim()) || (b.phone||'').replace(/-/g,'').includes(q);
+    newList = newList.filter(matchFn);
+    waitList = waitList.filter(matchFn);
+    doneList = doneList.filter(matchFn);
+  }
 
   document.getElementById('new-tbl').innerHTML=buildTable(newList,'new');
   document.getElementById('active-tbl').innerHTML=buildTable(waitList,'wait');
-  renderDoneTbl();
+  renderDoneTbl(doneList);
   resvSummary();
 
   const nc=document.getElementById('new-count');
   if(nc) nc.textContent=newList.length?`${newList.length}건`:'';
+  updateBulkBar();
 }
 
 // 예약 식별용 고유 key (시간|이름|연락처 조합 - 시트 원본과 매칭되는 안정적인 키)
@@ -637,17 +739,17 @@ function moveToWait(id){
   toast(`✅ ${b.name}님 대기로 이동!`);
   saveStatusToGAS(statusKey(b), 'wait');
   // 신규예약이었다면 구글시트(신규→예약자관리)로도 실제 이전
-  if(b.isNew && b.rowIndex){
-    moveNewToBookingsInGAS(b.rowIndex, b.name);
+  if(b.isNew){
+    moveNewToBookingsInGAS(b.time, b.name, b.phone);
   }
   render();
 }
 
-async function moveNewToBookingsInGAS(rowIndex, name){
+async function moveNewToBookingsInGAS(time, name, phone){
   try{
     const res = await fetch(GAS_URL, {
       method:'POST',
-      body: JSON.stringify({ action:'moveNewToBookings', rowIndex })
+      body: JSON.stringify({ action:'moveNewToBookings', time, name, phone })
     });
     const data = await res.json();
     if(data.error){
@@ -670,12 +772,33 @@ function markDone(id){
   expanded[id]=false;
   if(b.done){
     doneOrder.push(id);  // 완료 순서 추가
+    bulkSelected.delete(id);
   } else {
     doneOrder=doneOrder.filter(x=>x!==id);  // 되돌리면 순서에서 제거
   }
   toast(b.done?`✅ ${b.name}님 완료!`:`↩️ ${b.name}님 되돌렸어요`);
   saveStatusToGAS(statusKey(b), b.done ? 'done' : 'wait');
   updateStats();render();
+}
+
+function deleteBookingFromDone(id){
+  const b=[...bookings,...newBookings].find(x=>x.id===id);
+  if(!b) return;
+  if(!confirm(`${b.name}님을 완료 목록에서 완전히 삭제할까요?`)) return;
+  doneOrder = doneOrder.filter(x=>x!==id);
+  bookings = bookings.filter(x=>x.id!==id);
+  newBookings = newBookings.filter(x=>x.id!==id);
+  deleteStatusFromGAS(statusKey(b));
+  toast(`🗑️ ${b.name}님 삭제됨`);
+  render();
+}
+
+async function deleteStatusFromGAS(key){
+  try{
+    await fetch(GAS_URL, { method:'POST', body: JSON.stringify({ action:'deleteStatus', key }) });
+  }catch(e){
+    console.warn('상태 삭제 실패:', e.message);
+  }
 }
 
 function doCall(p){window.location.href='tel:'+p.replace(/-/g,'')}
@@ -685,9 +808,12 @@ async function sendSMS(id,typeId){
   const t=SMS.find(x=>x.id===typeId);
   if(!b||!t)return;
   if(!b.sentSMS) b.sentSMS={};
-  await sendSmsViaGAS(b.phone, t.label, t.title);
-  b.sentSMS[typeId]=true;
-  b.sms=true;
+  const ok = await sendSmsViaGAS(b.phone, t.label, t.title);
+  if(ok){
+    b.sentSMS[typeId]=true;
+    b.sms=true;
+    saveStatusToGAS(statusKey(b), undefined, {sentSms:{[t.label]:true}});
+  }
   render();
 }
 
@@ -758,26 +884,105 @@ function toast(msg){
 
 setDate();calcFleet();updateStats();
 loadBookingsFromGAS();
+loadOpMemosFromGAS();
+
+// ── 운영 메모 (예약관리 탭 하단) ──
+let opMemos = [];
+let opMemoNextId = 1;
+
+async function loadOpMemosFromGAS(){
+  try{
+    const res = await fetch(`${GAS_URL}?action=getOpMemos`);
+    const data = await res.json();
+    if(data.error) throw new Error(data.error);
+    opMemos = (data.opMemos||[]).map(m=>({id:Number(m.id)||opMemoNextId++, title:m.title, body:m.body}));
+    if(opMemos.length){
+      opMemoNextId = Math.max(...opMemos.map(m=>m.id)) + 1;
+    }
+  }catch(e){
+    console.warn('운영메모 로드 실패:', e.message);
+  }
+  renderOpMemos();
+}
+
+async function saveOpMemosToGAS(){
+  try{
+    await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({ action:'saveOpMemos', memos: opMemos.map(m=>({id:String(m.id), title:m.title, body:m.body})) })
+    });
+  }catch(e){
+    console.warn('운영메모 저장 실패:', e.message);
+  }
+}
+
+function addOpMemo(){
+  opMemos.push({id:opMemoNextId++, title:'새 메모', body:''});
+  renderOpMemos();
+  saveOpMemosToGAS();
+}
+
+function deleteOpMemo(id){
+  if(!confirm('이 메모를 삭제할까요?')) return;
+  opMemos = opMemos.filter(m=>m.id!==id);
+  renderOpMemos();
+  saveOpMemosToGAS();
+}
+
+function updateOpMemo(id, field, val){
+  const m = opMemos.find(x=>x.id===id);
+  if(m){ m[field]=val; saveOpMemosToGAS(); }
+}
+
+function renderOpMemos(){
+  const el = document.getElementById('op-memo-list');
+  if(!el) return;
+  if(!opMemos.length){
+    el.innerHTML = '<div class="empty">메모 없음</div>';
+    return;
+  }
+  el.innerHTML = opMemos.map(m=>`
+    <div class="op-memo-card">
+      <div class="op-memo-head">
+        <input class="op-memo-title" value="${(m.title||'').replace(/"/g,'&quot;')}" onchange="updateOpMemo(${m.id},'title',this.value)">
+        <button class="op-memo-del" onclick="deleteOpMemo(${m.id})">✕</button>
+      </div>
+      <textarea class="op-memo-body" rows="3" placeholder="메모 내용..." onchange="updateOpMemo(${m.id},'body',this.value)">${m.body||''}</textarea>
+    </div>
+  `).join('');
+}
 
 // ── 구글시트(예약자관리, 신규) GAS 연동 ──
 async function loadBookingsFromGAS(){
   try{
-    const [resB, resN, resS] = await Promise.all([
+    const [resB, resN, resS, resF] = await Promise.all([
       fetch(`${GAS_URL}?action=getBookings`),
       fetch(`${GAS_URL}?action=getNew`),
-      fetch(`${GAS_URL}?action=getStatus`)
+      fetch(`${GAS_URL}?action=getStatus`),
+      fetch(`${GAS_URL}?action=getFleet`)
     ]);
     const dataB = await resB.json();
     const dataN = await resN.json();
     const dataS = await resS.json();
+    const dataF = await resF.json();
     if(dataB.error) throw new Error(dataB.error);
     if(dataN.error) throw new Error(dataN.error);
     const statusMap = (dataS && dataS.statusMap) || {};
+    const metaMap = (dataS && dataS.metaMap) || {};
+
+    // 차량현황(가용/남은대수) 적용
+    if(dataF && dataF.fleet){
+      const f = dataF.fleet;
+      if(f.pa){ document.getElementById('fl-pa-avail').value=f.pa.avail; document.getElementById('fl-pa-rem').value=f.pa.remain; }
+      if(f.o){ document.getElementById('fl-o-avail').value=f.o.avail; document.getElementById('fl-o-rem').value=f.o.remain; }
+      if(f.ko){ document.getElementById('fl-ko-avail').value=f.ko.avail; document.getElementById('fl-ko-rem').value=f.ko.remain; }
+    }
 
     // 시트 데이터를 기존 bookings 구조로 변환
     bookings = (dataB.bookings||[]).map((row,i)=>{
       const key = `${row.time}|${row.name}|${row.phone}`;
       const saved = statusMap[key];
+      const meta = metaMap[key] || {};
       return {
         id: 1000 + i,
         time: row.time,
@@ -786,7 +991,9 @@ async function loadBookingsFromGAS(){
         site: row.channel,
         totalQty: row.qty || 1,
         phone: row.phone,
-        sms: row.smsSent || false,
+        sms: row.smsSent || !!(meta.sentSms && Object.keys(meta.sentSms).length),
+        sentSMS: meta.sentSms || {},
+        memo: meta.memo || '',
         done: saved === 'done' ? true : (saved === 'wait' ? false : (row.done || false)),
         movedToWait: saved === 'wait' || saved === 'done'
       };
@@ -795,6 +1002,7 @@ async function loadBookingsFromGAS(){
     newBookings = (dataN.newBookings||[]).map((row,i)=>{
       const key = `${row.time}|${row.name}|${row.phone}`;
       const saved = statusMap[key];
+      const meta = metaMap[key] || {};
       return {
         id: 5000 + i,
         rowIndex: row.rowIndex,
@@ -804,7 +1012,10 @@ async function loadBookingsFromGAS(){
         site: row.channel,
         totalQty: row.qty || 1,
         phone: row.phone,
-        sms: false,
+        amount: row.amount || 0,
+        sms: !!(meta.sentSms && Object.keys(meta.sentSms).length),
+        sentSMS: meta.sentSms || {},
+        memo: meta.memo || '',
         done: saved === 'done',
         movedToWait: saved === 'wait' || saved === 'done',
         isNew: true
@@ -820,8 +1031,9 @@ async function loadBookingsFromGAS(){
         const [, phone, time] = key.split('|');
         if(!walkinList.find(w=>w.phone===phone && w.time===time)){
           const isDone = statusMap[key] === 'done';
+          const meta = metaMap[key] || {};
           const newId = walkinNextId++;
-          walkinList.push({id:newId, phone, time, sentSms:{}, done:isDone});
+          walkinList.push({id:newId, phone, time, sentSms:meta.sentSms||{}, done:isDone});
           if(isDone) walkinDoneOrder.push(newId);
         }
       }
@@ -838,14 +1050,17 @@ async function loadBookingsFromGAS(){
 }
 
 // 완료/대기 처리 상태를 GAS(처리상태 시트)에 저장
-async function saveStatusToGAS(key, status){
+async function saveStatusToGAS(key, status, meta){
   try{
+    const body = { action:'setStatus', key };
+    if(status !== undefined) body.status = status;
+    if(meta !== undefined) body.meta = meta;
     const res = await fetch(GAS_URL, {
       method:'POST',
-      body: JSON.stringify({ action:'setStatus', key, status })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
-    console.log('[상태저장]', key, status, '→', data);
+    console.log('[상태저장]', key, status, meta, '→', data);
     if(data.error){ toast('⚠️ 상태저장 실패: '+data.error); }
   }catch(e){
     console.warn('상태 저장 실패:', e.message);
@@ -869,7 +1084,10 @@ setInterval(async ()=>{
         time: row.time, name: row.name,
         vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
         site: row.channel, totalQty: row.qty||1, phone: row.phone,
+        amount: row.amount || (existing?existing.amount:0) || 0,
         sms: existing ? existing.sms : false,
+        sentSMS: existing ? existing.sentSMS : {},
+        memo: existing ? existing.memo : '',
         done: existing ? existing.done : false,
         movedToWait: existing ? existing.movedToWait : false,
         isNew: true
@@ -1208,6 +1426,97 @@ function markWalkinDone(id){
   saveStatusToGAS('walkin|'+w.phone+'|'+w.time, w.done ? 'done' : 'wait');
 }
 
+// ── 검색 ──
+function onSearchInput(val){
+  searchQuery = val;
+  render();
+}
+
+// ── 일괄 선택 / 일괄 문자발송 ──
+function toggleBulkSel(id, checked){
+  if(checked) bulkSelected.add(id);
+  else bulkSelected.delete(id);
+  updateBulkBar();
+}
+function toggleBulkAll(checked){
+  document.querySelectorAll('.bulk-chk').forEach(cb=>{
+    cb.checked = checked;
+    const id = Number(cb.dataset.id);
+    if(checked) bulkSelected.add(id); else bulkSelected.delete(id);
+  });
+  updateBulkBar();
+}
+function updateBulkBar(){
+  const bar = document.getElementById('bulk-bar');
+  if(!bar) return;
+  if(bulkSelected.size>0){
+    bar.style.display='flex';
+    bar.querySelector('.bulk-count').textContent = `${bulkSelected.size}명 선택됨`;
+  } else {
+    bar.style.display='none';
+  }
+}
+async function bulkSendSms(typeId){
+  const t = SMS.find(x=>x.id===typeId);
+  if(!t) return;
+  const ids = [...bulkSelected];
+  if(!ids.length) return;
+  toast(`📨 ${ids.length}건 [${t.title}] 발송 시작...`);
+  for(const id of ids){
+    const b=[...bookings,...newBookings].find(x=>x.id===id);
+    if(!b) continue;
+    if(!b.sentSMS) b.sentSMS={};
+    const ok = await sendSmsViaGAS(b.phone, t.label, t.title);
+    if(ok){
+      b.sentSMS[typeId]=true;
+      b.sms=true;
+      saveStatusToGAS(statusKey(b), undefined, {sentSms:{[t.label]:true}});
+    }
+  }
+  bulkSelected.clear();
+  updateBulkBar();
+  toast(`✅ 일괄발송 완료 (${ids.length}건)`);
+  render();
+}
+
+// ── 대기 목록 드래그로 순서 변경 ──
+function dragStart(ev, id){
+  dragSrcId = id;
+  ev.dataTransfer.effectAllowed='move';
+  ev.target.closest('tr').classList.add('dragging');
+}
+function dragOver(ev){
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect='move';
+}
+function dragDrop(ev, targetId){
+  ev.preventDefault();
+  if(dragSrcId===null || dragSrcId===targetId) return;
+  // 현재 표시 순서를 기준으로 새 순서 배열 생성
+  const all=[...bookings,...newBookings];
+  const timeOrder=['9시','10시','11시','12시','1시','2시','3시','4시','5시','6시','7시','8시'];
+  let waitList=all.filter(b=>!b.done&&(!b.isNew||b.movedToWait))
+    .sort((a,b)=>{
+      const ci=waitCustomOrder.indexOf(a.id), cj=waitCustomOrder.indexOf(b.id);
+      if(ci!==-1 && cj!==-1) return ci-cj;
+      const ai=timeOrder.indexOf(a.time), bi=timeOrder.indexOf(b.time);
+      return (ai===-1?99:ai)-(bi===-1?99:bi);
+    });
+  let order = waitList.map(b=>b.id);
+  const srcIdx = order.indexOf(dragSrcId);
+  const tgtIdx = order.indexOf(targetId);
+  if(srcIdx===-1||tgtIdx===-1) return;
+  order.splice(srcIdx,1);
+  const insertAt = order.indexOf(targetId);
+  order.splice(insertAt + (srcIdx<tgtIdx?1:0), 0, dragSrcId);
+  waitCustomOrder = order;
+  render();
+}
+function dragEnd(ev){
+  document.querySelectorAll('tr.dragging').forEach(el=>el.classList.remove('dragging'));
+  dragSrcId=null;
+}
+
 function renderWalkinTbl(){
   const colors=[{b:'#1D9E75',c:'#1D9E75'},{b:'#0055CC',c:'#0055CC'},{b:'#CC7700',c:'#CC7700'},{b:'#880088',c:'#880088'},{b:'#CC0000',c:'#CC0000'},{b:'#555',c:'#555'}];
   const active = walkinList.filter(w=>!w.done);
@@ -1234,11 +1543,21 @@ function renderWalkinTbl(){
 }
 
 // 완료 섹터 렌더 (예약 완료 + 현장손님 완료 합산)
-function renderDoneTbl(){
+function renderDoneTbl(filteredList){
   const all=[...bookings,...newBookings];
-  const resvDone = doneOrder.map(id=>all.find(b=>b.id===id)).filter(Boolean);
-  const walkinDone = walkinDoneOrder.map(id=>walkinList.find(w=>w.id===id)).filter(Boolean);
+  let resvDone = doneOrder.map(id=>all.find(b=>b.id===id)).filter(Boolean);
+  let walkinDone = walkinDoneOrder.map(id=>walkinList.find(w=>w.id===id)).filter(Boolean);
   const el = document.getElementById('done-tbl');
+
+  // render()에서 검색필터가 적용된 리스트가 넘어오면 그것으로 resvDone 제한
+  if(filteredList){
+    const idSet = new Set(filteredList.map(b=>b.id));
+    resvDone = resvDone.filter(b=>idSet.has(b.id));
+    if(searchQuery.trim()){
+      const q = searchQuery.trim().replace(/-/g,'');
+      walkinDone = walkinDone.filter(w => (w.phone||'').replace(/-/g,'').includes(q));
+    }
+  }
 
   if(!resvDone.length && !walkinDone.length){
     el.innerHTML='<div class="empty">완료 없음</div>';
@@ -1261,13 +1580,16 @@ function renderDoneTbl(){
       <td>—</td><td>—</td>
       <td class="td-phone">${w.phone}</td>
       <td onclick="event.stopPropagation()">${smsCellHtml}</td>
+      <td>—</td>
+      <td onclick="event.stopPropagation()" style="text-align:center"><button class="act-icon del" onclick="deleteWalkinFromDone(${w.id})" title="영구 삭제">✕</button></td>
     </tr>`;
   }).join('');
 
   // 예약완료 + 현장완료 하나의 테이블로
-  const thead = `<thead><tr><th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th></tr></thead>`;
+  const thead = `<thead><tr><th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th><th>삭제</th></tr></thead>`;
   const resvRows = resvDone.map(b=>{
     const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
+    const memoVal = (b.memo||'').replace(/"/g,'&quot;');
     return `<tr class="done">
       <td onclick="event.stopPropagation()" style="text-align:center">
         <button class="act-icon undo" onclick="markDone(${b.id})" title="되돌리기">↩</button>
@@ -1278,6 +1600,8 @@ function renderDoneTbl(){
       <td class="td-site">${si.main}</td>
       <td class="td-phone" style="font-size:12px;font-weight:700;color:#999">${b.phone}</td>
       <td onclick="event.stopPropagation()">${smsCell(b)}</td>
+      <td class="td-memo" ondblclick="event.stopPropagation();editMemoCell(${b.id},this)" title="더블클릭해서 메모 입력">${memoVal||'<span class="memo-empty">+</span>'}</td>
+      <td onclick="event.stopPropagation()" style="text-align:center"><button class="act-icon del" onclick="deleteBookingFromDone(${b.id})" title="영구 삭제">✕</button></td>
     </tr>`;
   }).join('');
 
@@ -1285,6 +1609,18 @@ function renderDoneTbl(){
   const dc=document.getElementById('done-count');
   if(dc) dc.textContent=`${resvDone.length+walkinDone.length}건`;
 }
+
+function deleteWalkinFromDone(id){
+  const w = walkinList.find(x=>x.id===id);
+  if(!w) return;
+  if(!confirm(`현장손님(${w.phone})을 완료 목록에서 완전히 삭제할까요?`)) return;
+  walkinDoneOrder = walkinDoneOrder.filter(x=>x!==id);
+  walkinList = walkinList.filter(x=>x.id!==id);
+  deleteStatusFromGAS('walkin|'+w.phone+'|'+w.time);
+  toast('🗑️ 삭제됨');
+  render();
+}
+
 function switchPage(name, el){
   document.querySelectorAll('.page-tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.page-content').forEach(t=>t.classList.remove('on'));
