@@ -571,8 +571,8 @@ function smsCell(b){
   const mainS=SMS.filter(s=>s.main);
   const extraS=SMS.filter(s=>!s.main);
   const isOpen=!!extraOpen[b.id];
-  const mainHtml=mainS.map(s=>`<button class="sms-num ${s.cls}${b.sentSMS[s.id]?' sent':''}" title="${s.title}${b.sentSMS[s.id]?' ✓발송':'미발송'}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`).join('');
-  const extraHtml=extraS.map(s=>`<button class="sms-num ${s.cls}${b.sentSMS[s.id]?' sent':''}" title="${s.title}${b.sentSMS[s.id]?' ✓발송':'미발송'}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`).join('');
+  const mainHtml=mainS.map(s=>`<button class="sms-num ${s.cls}${b.sentSMS[s.label]?' sent':''}" title="${s.title}${b.sentSMS[s.label]?' ✓발송':'미발송'}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`).join('');
+  const extraHtml=extraS.map(s=>`<button class="sms-num ${s.cls}${b.sentSMS[s.label]?' sent':''}" title="${s.title}${b.sentSMS[s.label]?' ✓발송':'미발송'}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`).join('');
   return `<div onclick="event.stopPropagation()">
     <div class="sms-wrap">
       <div class="sms-main-btns">${mainHtml}</div>
@@ -831,10 +831,24 @@ async function reloadAllFromGAS(){
       ...newBookings.filter(b=>b.done).map(b=>b.id)
     ])];
 
+    restoreWaitOrder(statusMap, metaMap);
     render();
   }catch(e){
     console.warn('재로드 실패:', e.message);
   }
+}
+
+// 드래그 순서를 statusMap/metaMap에서 복원
+function restoreWaitOrder(statusMap, metaMap){
+  const orderMeta = metaMap['__order__wait'];
+  if(!orderMeta || !orderMeta.orderKeys || !orderMeta.orderKeys.length) return;
+  const all = [...bookings, ...newBookings];
+  const restored = [];
+  orderMeta.orderKeys.forEach(key=>{
+    const b = all.find(x=>statusKey(x)===key);
+    if(b) restored.push(b.id);
+  });
+  if(restored.length > 0) waitCustomOrder = restored;
 }
 
 function toggleRow(id){}
@@ -885,7 +899,7 @@ async function sendSMS(id,typeId){
   if(!b.sentSMS) b.sentSMS={};
   const ok = await sendSmsViaGAS(b.phone, t.label, t.title);
   if(ok){
-    b.sentSMS[typeId]=true;
+    b.sentSMS[t.label]=true;  // label('1'~'6')로 통일 - smsCell과 GAS 저장 키 일치
     b.sms=true;
     saveStatusToGAS(statusKey(b), undefined, {sentSms:{[t.label]:true}});
   }
@@ -1113,6 +1127,9 @@ async function loadBookingsFromGAS(){
         }
       }
     });
+
+    // 드래그 순서 복원 (__order__wait 키로 저장된 orderKeys를 id로 변환)
+    restoreWaitOrder(statusMap, metaMap);
 
     render();
     renderWalkinTbl();
@@ -1603,6 +1620,12 @@ function dragDrop(ev, targetId){
   const insertAt = order.indexOf(targetId);
   order.splice(insertAt + (srcIdx<tgtIdx?1:0), 0, dragSrcId);
   waitCustomOrder = order;
+  // id 대신 statusKey로 변환해서 GAS에 저장 (새로고침 후 id가 바뀌어도 복원 가능)
+  const orderKeys = order.map(id=>{
+    const b = all.find(x=>x.id===id);
+    return b ? statusKey(b) : null;
+  }).filter(Boolean);
+  saveStatusToGAS('__order__wait', 'order', {orderKeys});
   render();
 }
 function dragEnd(ev){
