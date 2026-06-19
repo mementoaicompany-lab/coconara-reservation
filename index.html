@@ -838,13 +838,25 @@ async function reloadAllFromGAS(){
   }
 }
 
-// 드래그 순서를 statusMap/metaMap에서 복원
+// 드래그 순서를 statusMap/metaMap 또는 sessionStorage에서 복원
 function restoreWaitOrder(statusMap, metaMap){
+  let orderKeys = null;
+  // 1순위: GAS(처리상태 시트)에서 로드
   const orderMeta = metaMap['__order__wait'];
-  if(!orderMeta || !orderMeta.orderKeys || !orderMeta.orderKeys.length) return;
+  if(orderMeta && orderMeta.orderKeys && orderMeta.orderKeys.length){
+    orderKeys = orderMeta.orderKeys;
+  }
+  // 2순위: sessionStorage (GAS 응답보다 빠르거나 GAS에 아직 없을 때)
+  if(!orderKeys){
+    try{
+      const cached = sessionStorage.getItem('waitCustomOrderKeys');
+      if(cached) orderKeys = JSON.parse(cached);
+    }catch(e){}
+  }
+  if(!orderKeys || !orderKeys.length) return;
   const all = [...bookings, ...newBookings];
   const restored = [];
-  orderMeta.orderKeys.forEach(key=>{
+  orderKeys.forEach(key=>{
     const b = all.find(x=>statusKey(x)===key);
     if(b) restored.push(b.id);
   });
@@ -1143,6 +1155,10 @@ async function loadBookingsFromGAS(){
 
 // 완료/대기 처리 상태를 GAS(처리상태 시트)에 저장
 async function saveStatusToGAS(key, status, meta){
+  // 드래그 순서는 sessionStorage에도 저장 (GAS 응답 전 새로고침 대비)
+  if(key === '__order__wait' && meta && meta.orderKeys){
+    try{ sessionStorage.setItem('waitCustomOrderKeys', JSON.stringify(meta.orderKeys)); }catch(e){}
+  }
   try{
     const body = { action:'setStatus', key };
     if(status !== undefined) body.status = status;
@@ -1578,7 +1594,7 @@ async function bulkSendSms(typeId){
     if(!b.sentSMS) b.sentSMS={};
     const ok = await sendSmsViaGAS(b.phone, t.label, t.title);
     if(ok){
-      b.sentSMS[typeId]=true;
+      b.sentSMS[t.label]=true;
       b.sms=true;
       saveStatusToGAS(statusKey(b), undefined, {sentSms:{[t.label]:true}});
     }
@@ -1641,7 +1657,7 @@ function renderWalkinTbl(){
   const rows = active.map(w=>{
     const btns = SMS.map((s,i)=>{
       const c=colors[i]||colors[0];
-      const sent=!!(w.sentSms&&w.sentSms[s.id]);
+      const sent=!!(w.sentSms&&w.sentSms[s.label]);
       return `<span class="sms-num" style="width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid ${c.b};color:${sent?'#fff':c.c};background:${sent?c.b:'#fff'};font-size:11px;font-weight:800;cursor:pointer;margin-right:2px" onclick="sendWalkinSmsRow(${w.id},'${s.id}')" title="${s.title}">${s.label}</span>`;
     }).join('');
     return `<tr class="walkin-row">
@@ -1687,7 +1703,7 @@ function renderDoneTbl(filteredList){
   const walkinRows = walkinDone.map(w=>{
     const btns = SMS.map((s,i)=>{
       const c=walkinSmsColors[i]||walkinSmsColors[0];
-      const sent=!!(w.sentSms&&w.sentSms[s.id]);
+      const sent=!!(w.sentSms&&w.sentSms[s.label]);
       return `<span class="sms-num" style="width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid ${c.b};color:${sent?'#fff':c.c};background:${sent?c.b:'#fff'};font-size:11px;font-weight:800;cursor:pointer;margin-right:2px" onclick="sendWalkinSmsRow(${w.id},'${s.id}')" title="${s.title}">${s.label}</span>`;
     }).join('');
     return `<tr class="done walkin-row">
