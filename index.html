@@ -754,11 +754,86 @@ async function moveNewToBookingsInGAS(time, name, phone){
     const data = await res.json();
     if(data.error){
       console.warn('신규→예약자관리 이전 실패:', data.error);
+      toast(`⚠️ ${name}님 시트 이전 실패`);
     } else {
       console.log(`[시트이전] ${name}님 신규→예약자관리 완료`);
+      // 시트 이전 완료 후 전체 데이터 재로드 (신규 시트에서 삭제됐으니 bookings에서 새로 받아야 함)
+      // polling이 먼저 실행돼서 항목이 사라지는 버그 방지
+      await reloadAllFromGAS();
     }
   }catch(e){
     console.warn('신규→예약자관리 이전 네트워크 오류:', e.message);
+  }
+}
+
+// 시트 이전 후 전체 데이터를 다시 조용히 로드 (toast 없이)
+async function reloadAllFromGAS(){
+  try{
+    const [resB, resN, resS] = await Promise.all([
+      fetch(`${GAS_URL}?action=getBookings`),
+      fetch(`${GAS_URL}?action=getNew`),
+      fetch(`${GAS_URL}?action=getStatus`)
+    ]);
+    const dataB = await resB.json();
+    const dataN = await resN.json();
+    const dataS = await resS.json();
+    if(dataB.error || dataN.error) return;
+
+    const statusMap = (dataS && dataS.statusMap) || {};
+    const metaMap = (dataS && dataS.metaMap) || {};
+
+    // 기존 대기/완료/문자이력/메모 상태를 최대한 보존하면서 시트 데이터로 갱신
+    const prevMap = {};
+    [...bookings,...newBookings].forEach(b=>{ prevMap[statusKey(b)] = b; });
+
+    bookings = (dataB.bookings||[]).map((row,i)=>{
+      const key = `${row.time}|${row.name}|${row.phone}`;
+      const prev = prevMap[key];
+      const saved = statusMap[key];
+      const meta = metaMap[key] || {};
+      return {
+        id: prev ? prev.id : (1000 + i),
+        time: row.time, name: row.name,
+        vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
+        site: row.channel, totalQty: row.qty||1, phone: row.phone,
+        sms: row.smsSent || !!(meta.sentSms && Object.keys(meta.sentSms).length),
+        sentSMS: meta.sentSms || (prev ? prev.sentSMS : {}),
+        memo: meta.memo || (prev ? prev.memo : ''),
+        done: saved === 'done' ? true : (saved === 'wait' ? false : (row.done || false)),
+        movedToWait: saved === 'wait' || saved === 'done'
+      };
+    });
+
+    newBookings = (dataN.newBookings||[]).map((row,i)=>{
+      const key = `${row.time}|${row.name}|${row.phone}`;
+      const prev = prevMap[key];
+      const saved = statusMap[key];
+      const meta = metaMap[key] || {};
+      return {
+        id: prev ? prev.id : (5000 + i),
+        rowIndex: row.rowIndex,
+        time: row.time, name: row.name,
+        vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
+        site: row.channel, totalQty: row.qty||1, phone: row.phone,
+        amount: row.amount || 0,
+        sms: !!(meta.sentSms && Object.keys(meta.sentSms).length),
+        sentSMS: meta.sentSms || (prev ? prev.sentSMS : {}),
+        memo: meta.memo || (prev ? prev.memo : ''),
+        done: saved === 'done',
+        movedToWait: saved === 'wait' || saved === 'done',
+        isNew: true
+      };
+    });
+
+    doneOrder = [...new Set([
+      ...doneOrder.filter(id=>[...bookings,...newBookings].find(b=>b.id===id)),
+      ...bookings.filter(b=>b.done).map(b=>b.id),
+      ...newBookings.filter(b=>b.done).map(b=>b.id)
+    ])];
+
+    render();
+  }catch(e){
+    console.warn('재로드 실패:', e.message);
   }
 }
 
@@ -1075,8 +1150,9 @@ setInterval(async ()=>{
     const data = await res.json();
     if(data.error) return;
     const prevCount = newBookings.filter(b=>b.isNew && !b.movedToWait).length;
-    newBookings = (data.newBookings||[]).map((row,i)=>{
-      // 기존 항목이 대기로 이동했었다면 상태 유지
+
+    // 신규 시트에서 온 항목들
+    const fromSheet = (data.newBookings||[]).map((row,i)=>{
       const existing = newBookings.find(x=>x.phone===row.phone && x.time===row.time && x.name===row.name);
       return {
         id: existing ? existing.id : 5000+i+Date.now()%1000,
@@ -1093,6 +1169,18 @@ setInterval(async ()=>{
         isNew: true
       };
     });
+
+    // movedToWait=true인 기존 항목 중 신규 시트에서 이미 사라진 것들은 유지
+    // (GAS 이전 완료됐지만 reloadAllFromGAS가 아직 bookings에 반영 안 됐을 수 있음)
+    const sheetKeys = new Set(fromSheet.map(b=>`${b.time}|${b.name}|${b.phone}`));
+    const preserved = newBookings.filter(b=>
+      b.movedToWait &&
+      !sheetKeys.has(`${b.time}|${b.name}|${b.phone}`) &&
+      ![...bookings].find(bk=>statusKey(bk)===statusKey(b))
+    );
+
+    newBookings = [...fromSheet, ...preserved];
+
     const newCount = newBookings.filter(b=>b.isNew && !b.movedToWait).length;
     if(newCount > prevCount) toast(`🔴 신규예약 ${newCount-prevCount}건 도착!`);
     render();
