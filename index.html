@@ -10,23 +10,23 @@
 body{font-family:'Noto Sans KR',sans-serif;background:#f2f3f5;font-size:13px;color:#111}
 
 /* HEADER */
-.hd{background:#fff;border-bottom:2px solid #111;padding:6px 10px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
-.hd-left{display:flex;align-items:center;gap:8px}
-.balance-badges{display:flex;gap:6px;margin-left:6px}
-.balance-badge{font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;background:#f2f3f5;color:#555;white-space:nowrap}
-.balance-badge.low{background:#ffe5e5;color:#CC0000}
-.logo{font-size:14px;font-weight:900;letter-spacing:-0.5px}
-.logo em{color:#1D9E75;font-style:normal}
-.today{font-size:11px;font-weight:700;background:#111;color:#fff;padding:2px 8px;border-radius:4px}
+.hd{background:#111315;padding:11px 14px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.hd-left{display:flex;align-items:center;gap:9px}
+.balance-badges{display:flex;gap:6px;margin-left:2px}
+.balance-badge{font-size:10.5px;font-weight:600;padding:4px 10px;border-radius:6px;background:transparent;color:#9aa0a8;white-space:nowrap;border:1px solid #2a2d31}
+.balance-badge.low{color:#ff8a89;border-color:#5a2a2a}
+.logo{font-size:15px;font-weight:800;letter-spacing:-0.4px;color:#fff}
+.logo em{color:#fff;font-style:normal;font-weight:800}
+.today{font-size:10.5px;font-weight:700;background:#1D9E75;color:#fff;padding:3px 9px;border-radius:6px}
 .hd-stats{display:flex;gap:4px}
 .hd-stat{text-align:center;background:#f5f5f5;border:1.5px solid #ddd;border-radius:6px;padding:2px 8px;min-width:46px}
 .hd-stat .n{font-size:16px;font-weight:900;line-height:1.2;color:#111}
 .hd-stat .l{font-size:9px;color:#666;font-weight:500}
 .hd-stat.hl .n{color:#1D9E75}
 .hd-stat.rd .n{color:#E24B4A}
-.hd-right{display:flex;gap:4px}
-.btn-sm{font-family:'Noto Sans KR',sans-serif;font-size:11px;font-weight:700;padding:4px 9px;border-radius:6px;border:1.5px solid #111;background:#fff;cursor:pointer;transition:background .12s}
-.btn-sm:hover{background:#f0f0f0}
+.hd-right{display:flex;gap:6px}
+.btn-sm{font-family:'Noto Sans KR',sans-serif;font-size:11px;font-weight:700;padding:5px 11px;border-radius:6px;border:1px solid #2a2d31;background:transparent;color:#cdd1d6;cursor:pointer;transition:all .12s}
+.btn-sm:hover{background:#1c1f22}
 .btn-sm.green{background:#1D9E75;color:#fff;border-color:#1D9E75}
 
 /* 페이지 탭 */
@@ -1042,6 +1042,7 @@ async function loadBalances(){
   try{
     const res = await fetch(`${GAS_URL}?action=getSolapiBalance`);
     const data = await res.json();
+    console.log('[솔라피 잔액 원본]', data);
     if(!data.error && data.total !== undefined){
       const total = Math.floor(Number(data.total));
       const low = total < 5000;
