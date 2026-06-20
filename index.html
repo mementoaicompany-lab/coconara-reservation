@@ -1028,10 +1028,12 @@ async function addBookingDirectToGAS(time, name, vehiclesStr, site, qty, phone){
       body: JSON.stringify({ action:'addBookingDirect', time, name, vehiclesStr, site, qty, phone })
     });
     const data = await res.json();
+    console.log('[직접추가 저장]', {time, name, vehiclesStr, site, qty, phone}, '→', data);
     if(data.error){ toast('⚠️ 시트 저장 실패: '+data.error); }
+    else{ toast('📝 시트 저장 완료 (row '+data.row+')'); }
   }catch(e){
     console.warn('예약 직접추가 저장 실패:', e.message);
-    toast('⚠️ 시트 저장 네트워크 오류');
+    toast('⚠️ 시트 저장 네트워크 오류: '+e.message);
   }
 }
 function refreshData(){toast('🔄 새로고침!')}
