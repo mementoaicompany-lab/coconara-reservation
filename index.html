@@ -931,13 +931,29 @@ function markDone(id){
 function deleteBookingFromDone(id){
   const b=[...bookings,...newBookings].find(x=>x.id===id);
   if(!b) return;
-  if(!confirm(`${b.name}님을 완료 목록에서 완전히 삭제할까요?`)) return;
+  if(!confirm(`${b.name}님을 완료 목록에서 완전히 삭제할까요? (구글시트에서도 삭제됩니다)`)) return;
   doneOrder = doneOrder.filter(x=>x!==id);
   bookings = bookings.filter(x=>x.id!==id);
   newBookings = newBookings.filter(x=>x.id!==id);
   deleteStatusFromGAS(statusKey(b));
+  deleteBookingRowFromGAS(b);
   toast(`🗑️ ${b.name}님 삭제됨`);
   render();
+}
+
+async function deleteBookingRowFromGAS(b){
+  try{
+    await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({
+        action:'deleteBookingRow',
+        sheet: b.isNew ? 'new' : 'bookings',
+        matchTime: b.time, matchName: b.name, matchPhone: b.phone
+      })
+    });
+  }catch(e){
+    console.warn('시트 행 삭제 실패:', e.message);
+  }
 }
 
 async function deleteStatusFromGAS(key){
