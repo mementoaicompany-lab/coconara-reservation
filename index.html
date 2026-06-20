@@ -1042,7 +1042,6 @@ async function loadBalances(){
   try{
     const res = await fetch(`${GAS_URL}?action=getSolapiBalance`);
     const data = await res.json();
-    console.log('[솔라피 잔액 원본]', data);
     if(!data.error && data.total !== undefined){
       const total = Math.floor(Number(data.total));
       const low = total < 5000;
