@@ -12,6 +12,9 @@ body{font-family:'Noto Sans KR',sans-serif;background:#f2f3f5;font-size:13px;col
 /* HEADER */
 .hd{background:#fff;border-bottom:2px solid #111;padding:6px 10px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
 .hd-left{display:flex;align-items:center;gap:8px}
+.balance-badges{display:flex;gap:6px;margin-left:6px}
+.balance-badge{font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;background:#f2f3f5;color:#555;white-space:nowrap}
+.balance-badge.low{background:#ffe5e5;color:#CC0000}
 .logo{font-size:14px;font-weight:900;letter-spacing:-0.5px}
 .logo em{color:#1D9E75;font-style:normal}
 .today{font-size:11px;font-weight:700;background:#111;color:#fff;padding:2px 8px;border-radius:4px}
@@ -160,6 +163,12 @@ tr[draggable="true"]{cursor:grab}
 .walkin-row td{background:#FFF8F0 !important}
 .empty{text-align:center;padding:28px;color:#bbb;font-size:13px;font-weight:500}
 tr.time-sep td{padding:3px 0;background:#f2f3f5;border:none}
+tr.time-group-hdr td{padding:4px 8px;background:#eef0f2;border-top:1px solid #ddd;border-bottom:1px solid #ddd}
+.tgh-time{font-size:11px;font-weight:900;color:#333;margin-right:8px}
+.tgh-veh{font-size:10px;font-weight:800;padding:1px 6px;border-radius:8px;margin-right:4px}
+.tgh-pa{background:#eee;color:#111}
+.tgh-o{background:#ffe5e5;color:#CC0000}
+.tgh-ko{background:#e5edff;color:#0055CC}
 td[ondblclick]:not([ondblclick=""]){cursor:pointer;position:relative}
 td[ondblclick]:not([ondblclick=""]):hover{background:#f9f9f9 !important}
 td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;color:#bbb;position:absolute;bottom:2px;right:3px;line-height:1}
@@ -306,6 +315,7 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
   <div class="hd-left">
     <div class="logo">코코<em>나라</em></div>
     <div class="today" id="today-lbl"></div>
+    <span id="balance-badges" class="balance-badges"></span>
   </div>
   <div class="hd-right">
     <button class="btn-sm green" onclick="toggleAddForm()">＋ 추가</button>
@@ -609,6 +619,8 @@ function editCell(id, field, el){
   function save(){
     const val = input.value.trim();
     if(!val){ render(); return; }
+    const oldKey = statusKey(b);
+    const matchTime = b.time, matchName = b.name, matchPhone = b.phone;
     if(field==='vehicles'){
       b.vehicles = val.split(/\s+/).map(s=>{
         const m=s.match(/^([가-힣a-zA-Z"]+)(\d*)$/);
@@ -623,6 +635,12 @@ function editCell(id, field, el){
       b[field] = val;
     }
     render();
+    const newValForGAS = field==='vehicles' ? val : (field==='phone' ? b.phone : val);
+    updateBookingCellInGAS(b, matchTime, matchName, matchPhone, field, newValForGAS);
+    if(field==='time'||field==='name'||field==='phone'){
+      const newKey = statusKey(b);
+      if(oldKey !== newKey) migrateStatusKeyInGAS(oldKey, newKey);
+    }
   }
   input.addEventListener('blur', save);
   input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); if(e.key==='Escape'){ render(); } });
@@ -650,19 +668,19 @@ function editMemoCell(id, el){
 
 function buildTable(list, mode='wait'){
   if(!list.length) return `<div class="empty">${mode==='new'?'신규 예약 없음':mode==='done'?'완료 없음':'대기 예약 없음'}</div>`;
-  let rows='';
-  let lastTime='';
-  list.forEach(b=>{
+  const editable = mode!=='done';
+  const hdr = mode==='new'
+    ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>'
+    : mode==='done'
+    ? '<th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th><th>삭제</th>'
+    : '<th><input type="checkbox" id="bulk-all-chk" onchange="toggleBulkAll(this.checked)" title="전체선택"></th><th>완료</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>';
+  const colCount = mode==='new'?8:mode==='done'?9:9;
+
+  function rowHtml(b){
     const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
-    // 시간대 구분선 (완료 섹션 제외)
-    if(mode!=='done' && b.time !== lastTime && lastTime !== ''){
-      rows+=`<tr class="time-sep"><td colspan="9"></td></tr>`;
-    }
-    lastTime=b.time;
-    const editable = mode!=='done';
     const memoVal = (b.memo||'').replace(/"/g,'&quot;');
-    rows+=`
-    <tr class="${b.done?'done':''}"${mode==='wait'?` draggable="true" data-id="${b.id}" ondragstart="dragStart(event,${b.id})" ondragover="dragOver(event)" ondrop="dragDrop(event,${b.id})" ondragend="dragEnd(event)"`:''}>
+    return `
+    <tr class="${b.done?'done':''}"${mode==='wait'?` draggable="true" data-id="${b.id}" data-time="${b.time}" ondragstart="dragStart(event,${b.id})" ondragover="dragOver(event)" ondrop="dragDrop(event,${b.id})" ondragend="dragEnd(event)"`:''}>
       ${mode==='wait'?`<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="bulk-chk" data-id="${b.id}" ${bulkSelected.has(b.id)?'checked':''} onchange="toggleBulkSel(${b.id},this.checked)"></td>`:''}
       <td onclick="event.stopPropagation()" style="text-align:center">
         ${mode==='new'
@@ -681,12 +699,39 @@ function buildTable(list, mode='wait'){
       <td class="td-memo" ondblclick="event.stopPropagation();editMemoCell(${b.id},this)" title="더블클릭해서 메모 입력">${memoVal||'<span class="memo-empty">+</span>'}</td>
       ${mode==='done'?`<td onclick="event.stopPropagation()" style="text-align:center"><button class="act-icon del" onclick="deleteBookingFromDone(${b.id})" title="영구 삭제">✕</button></td>`:''}
     </tr>`;
-  });
-  const hdr = mode==='new'
-    ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>'
-    : mode==='done'
-    ? '<th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th><th>삭제</th>'
-    : '<th><input type="checkbox" id="bulk-all-chk" onchange="toggleBulkAll(this.checked)" title="전체선택"></th><th>완료</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>';
+  }
+
+  let rows='';
+  if(mode==='wait'){
+    // 시간대별로 그룹핑 + 각 그룹 헤더에 차량 합계 표시
+    const groups = {};
+    const order = [];
+    list.forEach(b=>{
+      if(!groups[b.time]){ groups[b.time]=[]; order.push(b.time); }
+      groups[b.time].push(b);
+    });
+    order.forEach(time=>{
+      const items = groups[time];
+      const cnt = {pa:0,o:0,ko:0};
+      items.forEach(b=>b.vehicles.forEach(v=>{
+        if(v.code.startsWith('파')) cnt.pa+=v.qty;
+        else if(v.code.startsWith('오')) cnt.o+=v.qty;
+        else if(v.code.startsWith('코')) cnt.ko+=v.qty;
+      }));
+      rows += `<tr class="time-group-hdr" data-time="${time}" ondragover="dragOver(event)" ondrop="dragDropToEmpty(event,'${time}')">
+        <td colspan="${colCount}">
+          <span class="tgh-time">${time}</span>
+          <span class="tgh-veh tgh-pa">파${cnt.pa||0}</span>
+          <span class="tgh-veh tgh-o">오${cnt.o||0}</span>
+          <span class="tgh-veh tgh-ko">코${cnt.ko||0}</span>
+        </td>
+      </tr>`;
+      items.forEach(b=>{ rows+=rowHtml(b); });
+    });
+  } else {
+    list.forEach(b=>{ rows+=rowHtml(b); });
+  }
+
   return `<table>
     <thead><tr>${hdr}</tr></thead>
     <tbody>${rows}</tbody>
@@ -781,6 +826,7 @@ async function reloadAllFromGAS(){
 
     const statusMap = (dataS && dataS.statusMap) || {};
     const metaMap = (dataS && dataS.metaMap) || {};
+    const updatedAtMap = (dataS && dataS.updatedAtMap) || {};
 
     // 기존 대기/완료/문자이력/메모 상태를 최대한 보존하면서 시트 데이터로 갱신
     const prevMap = {};
@@ -986,6 +1032,34 @@ function toast(msg){
 setDate();calcFleet();updateStats();
 loadBookingsFromGAS();
 loadOpMemosFromGAS();
+loadBalances();
+
+// 솔라피/네이버광고 잔액 표시 (헤더 배너 옆)
+async function loadBalances(){
+  const el = document.getElementById('balance-badges');
+  if(!el) return;
+  let html = '';
+  try{
+    const res = await fetch(`${GAS_URL}?action=getSolapiBalance`);
+    const data = await res.json();
+    if(!data.error && data.balance !== undefined){
+      const low = Number(data.balance) < 5000;
+      html += `<span class="balance-badge${low?' low':''}" title="솔라피 잔액">💬 ${Number(data.balance).toLocaleString()}원</span>`;
+    }
+  }catch(e){ /* 조용히 무시 */ }
+  try{
+    const res2 = await fetch(`${GAS_URL}?action=getNaverAdBalance`);
+    const data2 = await res2.json();
+    if(!data2.error && data2.bizmoney !== undefined){
+      const low2 = Number(data2.bizmoney) < 10000;
+      html += `<span class="balance-badge${low2?' low':''}" title="네이버광고 잔액">📢 ${Number(data2.bizmoney).toLocaleString()}원</span>`;
+    }
+  }catch(e){ /* 조용히 무시 */ }
+  el.innerHTML = html;
+}
+// 5분마다 잔액 갱신
+setInterval(loadBalances, 300000);
+
 
 // ── 운영 메모 (예약관리 탭 하단) ──
 let opMemos = [];
@@ -1070,6 +1144,7 @@ async function loadBookingsFromGAS(){
     if(dataN.error) throw new Error(dataN.error);
     const statusMap = (dataS && dataS.statusMap) || {};
     const metaMap = (dataS && dataS.metaMap) || {};
+    const updatedAtMap = (dataS && dataS.updatedAtMap) || {};
 
     // 차량현황(가용/남은대수) 적용
     if(dataF && dataF.fleet){
@@ -1123,8 +1198,13 @@ async function loadBookingsFromGAS(){
       };
     });
 
-    doneOrder = bookings.filter(b=>b.done).map(b=>b.id)
-      .concat(newBookings.filter(b=>b.done).map(b=>b.id));
+    doneOrder = [...bookings.filter(b=>b.done), ...newBookings.filter(b=>b.done)]
+      .sort((a,b)=>{
+        const ta = updatedAtMap[statusKey(a)] || '';
+        const tb = updatedAtMap[statusKey(b)] || '';
+        return ta.localeCompare(tb); // 처리(완료)한 시각 순서대로 — ISO 문자열이라 문자열 비교로 시간순 정렬됨
+      })
+      .map(b=>b.id);
 
     // 현장손님 상태도 복원 (key 패턴: walkin|연락처|시간)
     Object.keys(statusMap).forEach(key=>{
@@ -1154,6 +1234,38 @@ async function loadBookingsFromGAS(){
 }
 
 // 완료/대기 처리 상태를 GAS(처리상태 시트)에 저장
+// 예약자관리/신규 시트의 셀을 원본 데이터에 직접 반영
+async function updateBookingCellInGAS(b, matchTime, matchName, matchPhone, field, value){
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({
+        action:'updateBookingCell',
+        sheet: b.isNew ? 'new' : 'bookings',
+        matchTime, matchName, matchPhone,
+        field, value
+      })
+    });
+    const data = await res.json();
+    if(data.error){ toast('⚠️ 시트 수정 실패: '+data.error); }
+  }catch(e){
+    console.warn('셀 수정 실패:', e.message);
+    toast('⚠️ 시트 수정 네트워크 오류');
+  }
+}
+
+// 시간/이름/연락처 변경으로 statusKey가 바뀔 때 처리상태(완료/대기/문자이력/메모)를 새 키로 이전
+async function migrateStatusKeyInGAS(oldKey, newKey){
+  try{
+    await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({ action:'migrateStatusKey', oldKey, newKey })
+    });
+  }catch(e){
+    console.warn('상태 키 이전 실패:', e.message);
+  }
+}
+
 async function saveStatusToGAS(key, status, meta){
   // 드래그 순서는 sessionStorage에도 저장 (GAS 응답 전 새로고침 대비)
   if(key === '__order__wait' && meta && meta.orderKeys){
@@ -1218,7 +1330,7 @@ setInterval(async ()=>{
     if(newCount > prevCount) toast(`🔴 신규예약 ${newCount-prevCount}건 도착!`);
     render();
   }catch(e){ /* 조용히 무시 */ }
-}, 60000);
+}, 20000);
 
 // ── 문자내용 탭 ──
 const SMS_BADGE_COLORS = [
@@ -1534,7 +1646,7 @@ async function sendWalkinSmsRow(id, smsId){
   const ok = await sendSmsViaGAS(w.phone, t.label, t.title);
   if(ok){
     if(!w.sentSms) w.sentSms={};
-    w.sentSms[smsId] = true;
+    w.sentSms[t.label] = true;
     saveStatusToGAS('walkin|'+w.phone+'|'+w.time, undefined, {sentSms:{[t.label]:true}});
   }
   renderWalkinTbl();
@@ -1615,20 +1727,31 @@ function dragOver(ev){
   ev.preventDefault();
   ev.dataTransfer.dropEffect='move';
 }
-function dragDrop(ev, targetId){
-  ev.preventDefault();
-  if(dragSrcId===null || dragSrcId===targetId) return;
-  // 현재 표시 순서를 기준으로 새 순서 배열 생성
+function getCurrentWaitOrder(){
   const all=[...bookings,...newBookings];
   const timeOrder=['9시','10시','11시','12시','1시','2시','3시','4시','5시','6시','7시','8시'];
-  let waitList=all.filter(b=>!b.done&&(!b.isNew||b.movedToWait))
+  return all.filter(b=>!b.done&&(!b.isNew||b.movedToWait))
     .sort((a,b)=>{
       const ci=waitCustomOrder.indexOf(a.id), cj=waitCustomOrder.indexOf(b.id);
       if(ci!==-1 && cj!==-1) return ci-cj;
       const ai=timeOrder.indexOf(a.time), bi=timeOrder.indexOf(b.time);
       return (ai===-1?99:ai)-(bi===-1?99:bi);
     });
-  let order = waitList.map(b=>b.id);
+}
+function dragDrop(ev, targetId){
+  ev.preventDefault();
+  ev.stopPropagation();
+  if(dragSrcId===null || dragSrcId===targetId) return;
+  const all=[...bookings,...newBookings];
+  const src = all.find(b=>b.id===dragSrcId);
+  const tgt = all.find(b=>b.id===targetId);
+  if(!src||!tgt) return;
+  // 같은 시간대 안에서만 순서 변경 가능 (다른 시간대로는 드래그로 옮길 수 없음)
+  if(src.time !== tgt.time){
+    toast('⚠️ 같은 시간대 안에서만 순서를 바꿀 수 있어요');
+    return;
+  }
+  let order = getCurrentWaitOrder().map(b=>b.id);
   const srcIdx = order.indexOf(dragSrcId);
   const tgtIdx = order.indexOf(targetId);
   if(srcIdx===-1||tgtIdx===-1) return;
@@ -1636,13 +1759,41 @@ function dragDrop(ev, targetId){
   const insertAt = order.indexOf(targetId);
   order.splice(insertAt + (srcIdx<tgtIdx?1:0), 0, dragSrcId);
   waitCustomOrder = order;
-  // id 대신 statusKey로 변환해서 GAS에 저장 (새로고침 후 id가 바뀌어도 복원 가능)
+  persistWaitOrder(order, all);
+  render();
+}
+// 시간대 그룹 헤더 영역에 드롭하면 그 시간대 맨 앞으로 이동
+function dragDropToEmpty(ev, time){
+  ev.preventDefault();
+  if(dragSrcId===null) return;
+  const all=[...bookings,...newBookings];
+  const src = all.find(b=>b.id===dragSrcId);
+  if(!src) return;
+  if(src.time !== time){
+    toast('⚠️ 같은 시간대 안에서만 순서를 바꿀 수 있어요');
+    return;
+  }
+  let order = getCurrentWaitOrder().map(b=>b.id);
+  const srcIdx = order.indexOf(dragSrcId);
+  if(srcIdx===-1) return;
+  order.splice(srcIdx,1);
+  // 해당 시간대의 첫 항목 위치에 삽입
+  const firstOfTime = order.findIndex(id=>{
+    const b = all.find(x=>x.id===id);
+    return b && b.time===time;
+  });
+  if(firstOfTime===-1) order.push(dragSrcId);
+  else order.splice(firstOfTime,0,dragSrcId);
+  waitCustomOrder = order;
+  persistWaitOrder(order, all);
+  render();
+}
+function persistWaitOrder(order, all){
   const orderKeys = order.map(id=>{
     const b = all.find(x=>x.id===id);
     return b ? statusKey(b) : null;
   }).filter(Boolean);
   saveStatusToGAS('__order__wait', 'order', {orderKeys});
-  render();
 }
 function dragEnd(ev){
   document.querySelectorAll('tr.dragging').forEach(el=>el.classList.remove('dragging'));
