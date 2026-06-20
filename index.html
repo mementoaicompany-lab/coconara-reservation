@@ -1007,13 +1007,32 @@ function submitBooking(){
   const site=document.getElementById('f-site').value;
   const qty=parseInt(document.getElementById('f-qty').value)||1;
   if(!time||!name||!phone||!selVehicles.length){toast('⚠️ 모든 항목 입력해주세요');return;}
-  bookings.push({id:nextId++,time,name,vehicles:selVehicles.map(c=>({code:c,qty})),site,totalQty:qty*selVehicles.length,phone,sms:false,done:false});
+  const vehicles = selVehicles.map(c=>({code:c,qty}));
+  const newBooking = {id:nextId++,time,name,vehicles,site,totalQty:qty*selVehicles.length,phone,sms:false,sentSMS:{},memo:'',done:false};
+  bookings.push(newBooking);
   selVehicles=[];
   document.querySelectorAll('.vsel-chip').forEach(c=>c.className='vsel-chip');
   ['f-time','f-name','f-phone'].forEach(i=>document.getElementById(i).value='');
   document.getElementById('f-qty').value='1';
   toggleAddForm();updateStats();render();
   toast(`✅ ${name}님 추가됨!`);
+  // 구글시트(예약자관리)에 실제로 저장 — 저장 안 하면 새로고침 시 사라짐
+  const vehiclesStr = vehicles.map(v=>v.code+(v.qty>1?v.qty:'')).join(' ');
+  addBookingDirectToGAS(time, name, vehiclesStr, site, qty, phone);
+}
+
+async function addBookingDirectToGAS(time, name, vehiclesStr, site, qty, phone){
+  try{
+    const res = await fetch(GAS_URL, {
+      method:'POST',
+      body: JSON.stringify({ action:'addBookingDirect', time, name, vehiclesStr, site, qty, phone })
+    });
+    const data = await res.json();
+    if(data.error){ toast('⚠️ 시트 저장 실패: '+data.error); }
+  }catch(e){
+    console.warn('예약 직접추가 저장 실패:', e.message);
+    toast('⚠️ 시트 저장 네트워크 오류');
+  }
 }
 function refreshData(){toast('🔄 새로고침!')}
 
