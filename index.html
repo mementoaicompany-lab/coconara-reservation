@@ -77,6 +77,7 @@ tbody tr.expanded{background:#f0faf6}
 td{padding:2px 6px;vertical-align:middle;white-space:nowrap;line-height:1.1}
 
 .td-time{font-size:13px;font-weight:900;color:#777}
+.time-orig{color:#bbb;font-weight:700;text-decoration:line-through;font-size:11px}
 .td-name{font-size:13px;font-weight:900;color:#111}
 .new-bd{font-size:9px;font-weight:800;background:#E24B4A;color:#fff;padding:1px 4px;border-radius:3px;margin-left:2px;animation:blink 1.2s infinite}
 .amount-bd{font-size:9px;font-weight:700;background:#eef6f0;color:#1D9E75;padding:1px 4px;border-radius:3px;margin-left:3px}
@@ -602,6 +603,27 @@ function autoHyphen(v){
   return v;
 }
 
+// 시간 정규화 (GAS formatTime과 동일 규칙): 분 버리고 정시로, 13시~ 는 오후 표기로
+// "13:30"→"1시", "09:50"→"9시", "10시14분"→"10시", "미정"→그대로
+function normTime(raw){
+  if(!raw && raw !== 0) return '';
+  const s = String(raw).trim();
+  const m = s.match(/(\d{1,2})\s*[:시]/);
+  if(!m){
+    const n = s.match(/^(\d{1,2})$/); // 숫자만 입력한 경우("13" → 1시)
+    if(!n) return s;
+    let h0 = parseInt(n[1],10);
+    if(h0 >= 13) h0 -= 12;
+    if(h0 === 0) h0 = 12;
+    return h0 + '시';
+  }
+  let h = parseInt(m[1],10);
+  if(isNaN(h)) return s;
+  if(h >= 13) h -= 12;
+  if(h === 0) h = 12;
+  return h + '시';
+}
+
 function editCell(id, field, el){
   const b=[...bookings,...newBookings].find(x=>x.id===id);
   if(!b) return;
@@ -633,16 +655,24 @@ function editCell(id, field, el){
       b[field] = autoHyphen(val);
     } else if(field==='site'){
       b.site = val;
+    } else if(field==='time'){
+      const newTime = normTime(val); // "13:30"/"13시30분"/"13" 등 어떤 입력이든 "1시"로 통일
+      if(newTime !== matchTime){
+        if(!b.origTime) b.origTime = matchTime;      // 최초 원래 시간 기억
+        if(newTime === b.origTime) b.origTime = '';  // 원래 시간으로 되돌리면 이력 제거
+      }
+      b.time = newTime;
     } else {
       b[field] = val;
     }
     render();
     b._editedAt = Date.now(); // 폴링/재로드가 수정사항을 덮어쓰지 않도록 보호
-    const newValForGAS = field==='vehicles' ? val : (field==='phone' ? b.phone : val);
+    const newValForGAS = field==='vehicles' ? val : (field==='phone' ? b.phone : (field==='time' ? b.time : val));
     updateBookingCellInGAS(b, matchTime, matchName, matchPhone, field, newValForGAS);
     if(field==='time'||field==='name'||field==='phone'){
       const newKey = statusKey(b);
-      if(oldKey !== newKey) migrateStatusKeyInGAS(oldKey, newKey);
+      const metaPatch = field==='time' ? {origTime: b.origTime || ''} : null;
+      persistKeyChangeAndMeta(oldKey, newKey, metaPatch);
     }
   }
   input.addEventListener('blur', save);
@@ -693,7 +723,7 @@ function buildTable(list, mode='wait'){
           : `<button class="act-icon ok" onclick="markDone(${b.id})" title="완료처리">✓</button>`
         }
       </td>
-      <td class="td-time" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'time',this)`:''}">${b.time}</td>
+      <td class="td-time" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'time',this)`:''}">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${b.origTime}</span> → ${b.time}`:b.time}</td>
       <td class="td-name" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'name',this)`:''}">${b.name}${b.isNew&&!b.movedToWait?'<span class="new-bd">NEW</span>':''}${b.amount?`<span class="amount-bd">${Number(b.amount).toLocaleString()}원</span>`:''}</td>
       <td ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'vehicles',this)`:''}" style="${editable?'cursor:text':''}"><div class="vehicles">${vHtml(b.vehicles)}</div></td>
       <td class="td-site" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'site',this)`:''}">${si.main}</td>
@@ -833,6 +863,18 @@ async function reloadAllFromGAS(){
 
     // 기존 대기/완료/문자이력/메모 상태를 최대한 보존하면서 시트 데이터로 갱신
     const digits = p => (p||'').replace(/\D/g,'');
+    // 이름+전화 기반 보조 상태 조회 (시간 표기가 바뀌어도 상태 유지)
+    const statusByNP = {}, metaByNP = {};
+    Object.keys(statusMap).forEach(k=>{
+      if(k.startsWith('walkin|')||k.startsWith('notify|')||k.startsWith('__')) return;
+      const parts = k.split('|');
+      if(parts.length !== 3) return;
+      const np = parts[1] + '|' + digits(parts[2]);
+      if(statusByNP[np] === undefined) statusByNP[np] = statusMap[k];
+      if(metaMap[k] && !metaByNP[np]) metaByNP[np] = metaMap[k];
+    });
+    const lookupStatus = (key, name, phone) => statusMap[key] !== undefined ? statusMap[key] : statusByNP[name+'|'+digits(phone)];
+    const lookupMeta = (key, name, phone) => metaMap[key] || metaByNP[name+'|'+digits(phone)] || {};
     const prevMap = {};
     const prevByNP = {}; // 이름|전화 (시간 수정돼도 매칭)
     const prevByPhone = {}; // 전화만 (이름 수정돼도 매칭)
@@ -852,11 +894,12 @@ async function reloadAllFromGAS(){
       const effName = keepLocal ? prev.name : row.name;
       const effPhone = keepLocal ? prev.phone : row.phone;
       const key = `${effTime}|${effName}|${effPhone}`;
-      const saved = statusMap[key];
-      const meta = metaMap[key] || {};
+      const saved = lookupStatus(key, effName, effPhone);
+      const meta = lookupMeta(key, effName, effPhone);
       return {
         id: prev ? prev.id : (1000 + i),
         time: effTime, name: effName,
+        origTime: (keepLocal && prev.origTime) ? prev.origTime : (meta.origTime || (prev ? prev.origTime : "") || ""),
         vehicles: keepLocal ? prev.vehicles : (row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}]),
         site: keepLocal ? prev.site : row.channel,
         totalQty: row.qty||1, phone: effPhone,
@@ -876,12 +919,13 @@ async function reloadAllFromGAS(){
       const effName = keepLocal ? prev.name : row.name;
       const effPhone = keepLocal ? prev.phone : row.phone;
       const key = `${effTime}|${effName}|${effPhone}`;
-      const saved = statusMap[key];
-      const meta = metaMap[key] || {};
+      const saved = lookupStatus(key, effName, effPhone);
+      const meta = lookupMeta(key, effName, effPhone);
       return {
         id: prev ? prev.id : (5000 + i),
         rowIndex: row.rowIndex,
         time: effTime, name: effName,
+        origTime: (keepLocal && prev.origTime) ? prev.origTime : (meta.origTime || (prev ? prev.origTime : "") || ""),
         vehicles: keepLocal ? prev.vehicles : (row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}]),
         site: keepLocal ? prev.site : row.channel,
         totalQty: row.qty||1, phone: effPhone,
@@ -926,10 +970,18 @@ function restoreWaitOrder(statusMap, metaMap){
   }
   if(!orderKeys || !orderKeys.length) return;
   const all = [...bookings, ...newBookings];
+  const dg = p => (p||'').replace(/\D/g,'');
   const restored = [];
   orderKeys.forEach(key=>{
-    const b = all.find(x=>statusKey(x)===key);
-    if(b) restored.push(b.id);
+    let b = all.find(x=>statusKey(x)===key);
+    // 시간 표기가 바뀌어 정확한 키가 없으면 이름+전화로 찾음
+    if(!b){
+      const parts = String(key).split('|');
+      if(parts.length === 3){
+        b = all.find(x=>x.name===parts[1] && dg(x.phone)===dg(parts[2]));
+      }
+    }
+    if(b && !restored.includes(b.id)) restored.push(b.id);
   });
   if(restored.length > 0) waitCustomOrder = restored;
 }
@@ -1210,6 +1262,22 @@ async function loadBookingsFromGAS(){
     const metaMap = (dataS && dataS.metaMap) || {};
     const updatedAtMap = (dataS && dataS.updatedAtMap) || {};
 
+    // 이름+전화 기반 보조 조회맵: 시간 표기가 바뀌어도(정규화/수정) 기존 상태·문자이력을 찾을 수 있게
+    const npDigits = p => (p||'').replace(/\D/g,'');
+    const statusByNP = {}, metaByNP = {}, updatedByNP = {};
+    Object.keys(statusMap).forEach(k=>{
+      if(k.startsWith('walkin|')||k.startsWith('notify|')||k.startsWith('__')) return;
+      const parts = k.split('|');
+      if(parts.length !== 3) return;
+      const np = parts[1] + '|' + npDigits(parts[2]);
+      if(statusByNP[np] === undefined) statusByNP[np] = statusMap[k];
+      if(metaMap[k] && !metaByNP[np]) metaByNP[np] = metaMap[k];
+      if(updatedAtMap[k] && !updatedByNP[np]) updatedByNP[np] = updatedAtMap[k];
+    });
+    const lookupStatus = (key, name, phone) => statusMap[key] !== undefined ? statusMap[key] : statusByNP[name+'|'+npDigits(phone)];
+    const lookupMeta = (key, name, phone) => metaMap[key] || metaByNP[name+'|'+npDigits(phone)] || {};
+    const lookupUpdated = (key, name, phone) => updatedAtMap[key] || updatedByNP[name+'|'+npDigits(phone)] || '';
+
     // 차량현황(가용/남은대수) 적용
     if(dataF && dataF.fleet){
       const f = dataF.fleet;
@@ -1221,12 +1289,13 @@ async function loadBookingsFromGAS(){
     // 시트 데이터를 기존 bookings 구조로 변환
     bookings = (dataB.bookings||[]).map((row,i)=>{
       const key = `${row.time}|${row.name}|${row.phone}`;
-      const saved = statusMap[key];
-      const meta = metaMap[key] || {};
+      const saved = lookupStatus(key, row.name, row.phone);
+      const meta = lookupMeta(key, row.name, row.phone);
       return {
         id: 1000 + i,
         time: row.time,
         name: row.name,
+        origTime: meta.origTime || '',
         vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
         site: row.channel,
         totalQty: row.qty || 1,
@@ -1241,13 +1310,14 @@ async function loadBookingsFromGAS(){
 
     newBookings = (dataN.newBookings||[]).map((row,i)=>{
       const key = `${row.time}|${row.name}|${row.phone}`;
-      const saved = statusMap[key];
-      const meta = metaMap[key] || {};
+      const saved = lookupStatus(key, row.name, row.phone);
+      const meta = lookupMeta(key, row.name, row.phone);
       return {
         id: 5000 + i,
         rowIndex: row.rowIndex,
         time: row.time,
         name: row.name,
+        origTime: meta.origTime || '',
         vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
         site: row.channel,
         totalQty: row.qty || 1,
@@ -1264,9 +1334,9 @@ async function loadBookingsFromGAS(){
 
     doneOrder = [...bookings.filter(b=>b.done), ...newBookings.filter(b=>b.done)]
       .sort((a,b)=>{
-        const ta = updatedAtMap[statusKey(a)] || '';
-        const tb = updatedAtMap[statusKey(b)] || '';
-        return ta.localeCompare(tb); // 처리(완료)한 시각 순서대로 — ISO 문자열이라 문자열 비교로 시간순 정렬됨
+        const ta = lookupUpdated(statusKey(a), a.name, a.phone);
+        const tb = lookupUpdated(statusKey(b), b.name, b.phone);
+        return ta.localeCompare(tb); // 처리(완료)한 시각 순서대로
       })
       .map(b=>b.id);
 
@@ -1330,6 +1400,12 @@ async function migrateStatusKeyInGAS(oldKey, newKey){
   }
 }
 
+// 키 이전과 meta 저장의 순서를 보장 (동시에 날리면 이전 과정에서 문자이력이 유실될 수 있음)
+async function persistKeyChangeAndMeta(oldKey, newKey, metaPatch){
+  if(oldKey !== newKey) await migrateStatusKeyInGAS(oldKey, newKey);
+  if(metaPatch) await saveStatusToGAS(newKey, undefined, metaPatch);
+}
+
 async function saveStatusToGAS(key, status, meta){
   // 드래그 순서는 sessionStorage에도 저장 (GAS 응답 전 새로고침 대비)
   if(key === '__order__wait' && meta && meta.orderKeys){
@@ -1374,6 +1450,7 @@ setInterval(async ()=>{
         rowIndex: row.rowIndex,
         time: keepLocal ? existing.time : row.time,
         name: keepLocal ? existing.name : row.name,
+        origTime: existing ? (existing.origTime||"") : "",
         vehicles: keepLocal ? existing.vehicles : (row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}]),
         site: keepLocal ? existing.site : row.channel,
         totalQty: row.qty||1,
@@ -1825,12 +1902,16 @@ function getCurrentWaitOrder(){
 function changeTimeByDrag(src, newTime){
   const oldKey = statusKey(src);
   const oldTime = src.time;
+  if(newTime !== oldTime){
+    if(!src.origTime) src.origTime = oldTime;       // 최초 원래 시간 기억
+    if(newTime === src.origTime) src.origTime = ''; // 원래 시간으로 돌아오면 이력 제거
+  }
   src.time = newTime;
   src._editedAt = Date.now();
   updateBookingCellInGAS(src, oldTime, src.name, src.phone, 'time', newTime);
   const newKey = statusKey(src);
-  if(oldKey !== newKey) migrateStatusKeyInGAS(oldKey, newKey);
-  toast(`⏰ ${src.name}님 → ${newTime}로 이동`);
+  persistKeyChangeAndMeta(oldKey, newKey, {origTime: src.origTime || ''});
+  toast(`⏰ ${src.name}님 ${src.origTime ? src.origTime+' → ' : ''}${newTime} 이동`);
 }
 function dragDrop(ev, targetId){
   ev.preventDefault();
@@ -1976,7 +2057,7 @@ function renderDoneTbl(filteredList){
       <td onclick="event.stopPropagation()" style="text-align:center">
         <button class="act-icon undo" onclick="markDone(${b.id})" title="되돌리기">↩</button>
       </td>
-      <td class="td-time">${b.time}</td>
+      <td class="td-time">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${b.origTime}</span> → ${b.time}`:b.time}</td>
       <td class="td-name">${b.name}</td>
       <td><div class="vehicles">${vHtml(b.vehicles)}</div></td>
       <td class="td-site">${si.main}</td>
