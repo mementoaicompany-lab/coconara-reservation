@@ -165,6 +165,7 @@ tr[draggable="true"]{cursor:grab}
 .walkin-inline-btn{font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:700;padding:7px 14px;border-radius:8px;border:1.5px solid #E87700;background:#E87700;color:#fff;cursor:pointer;white-space:nowrap}
 .walkin-row td{background:#FFF8F0 !important}
 .empty{text-align:center;padding:28px;color:#bbb;font-size:13px;font-weight:500}
+.empty-sm{padding:8px}
 tr.time-sep td{padding:3px 0;background:#f2f3f5;border:none}
 tr.time-group-hdr td{padding:4px 8px;background:#eef0f2;border-top:1px solid #ddd;border-bottom:1px solid #ddd}
 .tgh-time{font-size:11px;font-weight:900;color:#333;margin-right:8px}
@@ -393,14 +394,14 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
     </div>
   </div>
 
+  <!-- 1. 신규 -->
+  <div class="sec sec-new"><span>신규</span><div class="sec-line"></div><span id="new-count" class="sec-count"></span></div>
+  <div class="tbl-wrap"><div id="new-tbl"></div></div>
+
   <!-- 검색창 -->
   <div class="search-wrap">
     <input id="search-input" type="text" placeholder="🔍 이름 또는 연락처 검색" oninput="onSearchInput(this.value)">
   </div>
-
-  <!-- 1. 신규 -->
-  <div class="sec sec-new"><span>신규</span><div class="sec-line"></div><span id="new-count" class="sec-count"></span></div>
-  <div class="tbl-wrap"><div id="new-tbl"></div></div>
 
   <!-- 2. 대기 -->
   <div class="sec sec-wait"><span>대기</span>
@@ -700,7 +701,7 @@ function editMemoCell(id, el){
 }
 
 function buildTable(list, mode='wait'){
-  if(!list.length) return `<div class="empty">${mode==='new'?'신규 예약 없음':mode==='done'?'완료 없음':'대기 예약 없음'}</div>`;
+  if(!list.length) return `<div class="empty${mode==='new'?' empty-sm':''}">${mode==='new'?'신규 예약 없음':mode==='done'?'완료 없음':'대기 예약 없음'}</div>`;
   const editable = mode!=='done';
   const hdr = mode==='new'
     ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>'
