@@ -81,6 +81,7 @@ td{padding:2px 6px;vertical-align:middle;white-space:nowrap;line-height:1.1}
 .td-name{font-size:13px;font-weight:900;color:#111}
 .new-bd{font-size:9px;font-weight:800;background:#E24B4A;color:#fff;padding:1px 4px;border-radius:3px;margin-left:2px;animation:blink 1.2s infinite}
 .amount-bd{font-size:9px;font-weight:700;background:#eef6f0;color:#1D9E75;padding:1px 4px;border-radius:3px;margin-left:3px}
+.td-amount{font-size:12px;font-weight:800;color:#1D9E75;white-space:nowrap;text-align:right}
 
 /* 차량 텍스트 */
 .vehicles{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
@@ -704,11 +705,11 @@ function buildTable(list, mode='wait'){
   if(!list.length) return `<div class="empty${mode==='new'?' empty-sm':''}">${mode==='new'?'신규 예약 없음':mode==='done'?'완료 없음':'대기 예약 없음'}</div>`;
   const editable = mode!=='done';
   const hdr = mode==='new'
-    ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>'
+    ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>금액</th><th>메모</th>'
     : mode==='done'
-    ? '<th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th><th>삭제</th>'
-    : '<th><input type="checkbox" id="bulk-all-chk" onchange="toggleBulkAll(this.checked)" title="전체선택"></th><th>완료</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th>';
-  const colCount = mode==='new'?8:mode==='done'?9:9;
+    ? '<th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>금액</th><th>메모</th><th>삭제</th>'
+    : '<th><input type="checkbox" id="bulk-all-chk" onchange="toggleBulkAll(this.checked)" title="전체선택"></th><th>완료</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>금액</th><th>메모</th>';
+  const colCount = mode==='new'?9:mode==='done'?10:10;
 
   function rowHtml(b){
     const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
@@ -725,11 +726,12 @@ function buildTable(list, mode='wait'){
         }
       </td>
       <td class="td-time" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'time',this)`:''}">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${b.origTime}</span> → ${b.time}`:b.time}</td>
-      <td class="td-name" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'name',this)`:''}">${b.name}${b.isNew&&!b.movedToWait?'<span class="new-bd">NEW</span>':''}${b.amount?`<span class="amount-bd">${Number(b.amount).toLocaleString()}원</span>`:''}</td>
+      <td class="td-name" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'name',this)`:''}">${b.name}${b.isNew&&!b.movedToWait?'<span class="new-bd">NEW</span>':''}</td>
       <td ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'vehicles',this)`:''}" style="${editable?'cursor:text':''}"><div class="vehicles">${vHtml(b.vehicles)}</div></td>
       <td class="td-site" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'site',this)`:''}">${si.main}</td>
       <td class="td-phone" style="font-size:12px;font-weight:700;color:#999;${editable?'cursor:text':''}" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'phone',this)`:''}">${b.phone}</td>
       <td onclick="event.stopPropagation()">${smsCell(b)}</td>
+      <td class="td-amount">${b.amount?Number(b.amount).toLocaleString():'—'}</td>
       <td class="td-memo" ondblclick="event.stopPropagation();editMemoCell(${b.id},this)" title="더블클릭해서 메모 입력">${memoVal||'<span class="memo-empty">+</span>'}</td>
       ${mode==='done'?`<td onclick="event.stopPropagation()" style="text-align:center"><button class="act-icon del" onclick="deleteBookingFromDone(${b.id})" title="영구 삭제">✕</button></td>`:''}
     </tr>`;
@@ -2047,12 +2049,13 @@ function renderDoneTbl(filteredList){
       <td class="td-phone">${w.phone}</td>
       <td onclick="event.stopPropagation()"><div style="display:flex;gap:0;flex-wrap:nowrap;align-items:center">${btns}</div></td>
       <td>—</td>
+      <td>—</td>
       <td onclick="event.stopPropagation()" style="text-align:center"><button class="act-icon del" onclick="deleteWalkinFromDone(${w.id})" title="영구 삭제">✕</button></td>
     </tr>`;
   }).join('');
 
   // 예약완료 + 현장완료 하나의 테이블로
-  const thead = `<thead><tr><th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>메모</th><th>삭제</th></tr></thead>`;
+  const thead = `<thead><tr><th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>금액</th><th>메모</th><th>삭제</th></tr></thead>`;
   const resvRows = resvDone.map(b=>{
     const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
     const memoVal = (b.memo||'').replace(/"/g,'&quot;');
@@ -2061,11 +2064,12 @@ function renderDoneTbl(filteredList){
         <button class="act-icon undo" onclick="markDone(${b.id})" title="되돌리기">↩</button>
       </td>
       <td class="td-time">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${b.origTime}</span> → ${b.time}`:b.time}</td>
-      <td class="td-name">${b.name}${b.amount?`<span class="amount-bd">${Number(b.amount).toLocaleString()}원</span>`:``}</td>
+      <td class="td-name">${b.name}</td>
       <td><div class="vehicles">${vHtml(b.vehicles)}</div></td>
       <td class="td-site">${si.main}</td>
       <td class="td-phone" style="font-size:12px;font-weight:700;color:#999">${b.phone}</td>
       <td onclick="event.stopPropagation()">${smsCell(b)}</td>
+      <td class="td-amount">${b.amount?Number(b.amount).toLocaleString():'—'}</td>
       <td class="td-memo" ondblclick="event.stopPropagation();editMemoCell(${b.id},this)" title="더블클릭해서 메모 입력">${memoVal||'<span class="memo-empty">+</span>'}</td>
       <td onclick="event.stopPropagation()" style="text-align:center"><button class="act-icon del" onclick="deleteBookingFromDone(${b.id})" title="영구 삭제">✕</button></td>
     </tr>`;
