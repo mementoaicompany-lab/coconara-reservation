@@ -900,6 +900,7 @@ async function reloadAllFromGAS(){
         id: prev ? prev.id : (1000 + i),
         time: effTime, name: effName,
         origTime: (keepLocal && prev.origTime) ? prev.origTime : (meta.origTime || (prev ? prev.origTime : "") || ""),
+        amount: row.amount || (prev ? prev.amount : 0) || 0,
         vehicles: keepLocal ? prev.vehicles : (row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}]),
         site: keepLocal ? prev.site : row.channel,
         totalQty: row.qty||1, phone: effPhone,
@@ -1296,6 +1297,7 @@ async function loadBookingsFromGAS(){
         time: row.time,
         name: row.name,
         origTime: meta.origTime || '',
+        amount: row.amount || 0,
         vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
         site: row.channel,
         totalQty: row.qty || 1,
@@ -2058,7 +2060,7 @@ function renderDoneTbl(filteredList){
         <button class="act-icon undo" onclick="markDone(${b.id})" title="되돌리기">↩</button>
       </td>
       <td class="td-time">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${b.origTime}</span> → ${b.time}`:b.time}</td>
-      <td class="td-name">${b.name}</td>
+      <td class="td-name">${b.name}${b.amount?`<span class="amount-bd">${Number(b.amount).toLocaleString()}원</span>`:``}</td>
       <td><div class="vehicles">${vHtml(b.vehicles)}</div></td>
       <td class="td-site">${si.main}</td>
       <td class="td-phone" style="font-size:12px;font-weight:700;color:#999">${b.phone}</td>
