@@ -83,6 +83,14 @@ td{padding:2px 6px;vertical-align:middle;white-space:nowrap;line-height:1.1}
 .amount-bd{font-size:9px;font-weight:700;background:#eef6f0;color:#1D9E75;padding:1px 4px;border-radius:3px;margin-left:3px}
 .td-amount{font-size:12px;font-weight:800;color:#1D9E75;white-space:nowrap;text-align:right}
 
+/* 취소/반품 요청 알림 배너 */
+#claim-banner{background:#CC1F1E;color:#fff;padding:8px 14px;display:flex;flex-direction:column;gap:6px}
+.claim-row{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:800}
+.claim-type{background:#fff;color:#CC1F1E;font-size:11px;font-weight:900;padding:2px 8px;border-radius:5px;white-space:nowrap}
+.claim-info{flex:1}
+.claim-ok{background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.5);color:#fff;font-size:11px;font-weight:800;padding:4px 12px;border-radius:6px;cursor:pointer;font-family:inherit}
+.claim-ok:hover{background:rgba(255,255,255,0.32)}
+
 /* 차량 텍스트 */
 .vehicles{display:flex;gap:3px;align-items:center;flex-wrap:wrap}
 .vo  {font-size:13px;font-weight:900;color:#CC0000}
@@ -327,6 +335,9 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
     <button class="btn-sm" onclick="refreshData()">↻</button>
   </div>
 </div>
+
+<!-- 취소/반품 요청 알림 배너 -->
+<div id="claim-banner" style="display:none"></div>
 
 <!-- 페이지 탭 -->
 <div class="page-tabs">
@@ -837,7 +848,12 @@ async function moveNewToBookingsInGAS(time, name, phone){
       console.warn('신규→예약자관리 이전 실패:', data.error);
       toast(`⚠️ ${name}님 시트 이전 실패`);
     } else {
-      console.log(`[시트이전] ${name}님 신규→예약자관리 완료`);
+      console.log(`[시트이전] ${name}님 신규→예약자관리 완료`, data.dispatch||'');
+      // 스마트스토어 자동 발송처리 결과 알림
+      if(data.dispatch){
+        if(data.dispatch.success) toast(`📦 ${name}님 스토어 발송처리 완료`);
+        else if(data.dispatch.error) toast(`⚠️ ${name}님 발송처리 실패 — 스토어에서 수동 처리 필요`);
+      }
       // 시트 이전 완료 후 전체 데이터 재로드 (신규 시트에서 삭제됐으니 bookings에서 새로 받아야 함)
       // polling이 먼저 실행돼서 항목이 사라지는 버그 방지
       await reloadAllFromGAS();
@@ -1151,6 +1167,37 @@ setDate();calcFleet();updateStats();
 loadBookingsFromGAS();
 loadOpMemosFromGAS();
 loadBalances();
+loadClaims();
+
+// ── 스마트스토어 취소/반품 요청 알림 배너 ──
+async function loadClaims(){
+  const el = document.getElementById('claim-banner');
+  if(!el) return;
+  try{
+    const res = await fetch(`${GAS_URL}?action=getClaims`);
+    const data = await res.json();
+    const claims = (data && data.claims) || [];
+    if(!claims.length){ el.style.display='none'; el.innerHTML=''; return; }
+    el.innerHTML = claims.map(c=>`
+      <div class="claim-row">
+        <span class="claim-type">⚠️ ${c.type}</span>
+        <span class="claim-info">${c.name ? `${c.time} ${c.name} ${c.phone}` : `주문번호 ${c.orderNo}`} <span style="opacity:0.7;font-size:11px">(${c.detectedAt} 감지)</span></span>
+        <button class="claim-ok" onclick="markClaimSeen('${c.type}','${c.orderNo}')">확인</button>
+      </div>
+    `).join('');
+    el.style.display='flex';
+  }catch(e){ /* 조용히 무시 */ }
+}
+
+async function markClaimSeen(type, orderNo){
+  try{
+    await fetch(GAS_URL, { method:'POST', body: JSON.stringify({ action:'markClaimSeen', type, orderNo }) });
+  }catch(e){}
+  loadClaims();
+}
+// 1분마다 클레임 확인
+setInterval(loadClaims, 60000);
+
 
 // 솔라피/네이버광고 잔액 표시 (헤더 배너 옆)
 async function loadBalances(){
