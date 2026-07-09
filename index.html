@@ -640,6 +640,11 @@ function normTime(raw){
 function editCell(id, field, el){
   const b=[...bookings,...newBookings].find(x=>x.id===id);
   if(!b) return;
+  // 복수 주문(같은 사람 여러 차량 구매) 병합 건은 차량 수정 불가 — 어느 주문의 차량인지 모호
+  if(field==='vehicles' && b.merged){
+    toast('⚠️ 복수 주문 건은 차량을 여기서 수정할 수 없어요 (구글시트에서 수정)');
+    return;
+  }
   const cur = field==='vehicles' ? b.vehicles.map(v=>v.code+(v.qty>1?v.qty:'')).join(' ')
             : field==='site' ? b.site
             : b[field];
@@ -851,7 +856,8 @@ async function moveNewToBookingsInGAS(time, name, phone){
       console.log(`[시트이전] ${name}님 신규→예약자관리 완료`, data.dispatch||'');
       // 스마트스토어 자동 발송처리 결과 알림
       if(data.dispatch){
-        if(data.dispatch.success) toast(`📦 ${name}님 스토어 발송처리 완료`);
+        if(data.dispatch.queued) toast(`📦 ${name}님 발송처리 요청됨 (1분 내 자동처리)`);
+        else if(data.dispatch.success) toast(`📦 ${name}님 스토어 발송처리 완료`);
         else if(data.dispatch.error) toast(`⚠️ ${name}님 발송처리 실패 — 스토어에서 수동 처리 필요`);
       }
       // 시트 이전 완료 후 전체 데이터 재로드 (신규 시트에서 삭제됐으니 bookings에서 새로 받아야 함)
@@ -920,6 +926,7 @@ async function reloadAllFromGAS(){
         time: effTime, name: effName,
         origTime: (keepLocal && prev.origTime) ? prev.origTime : (meta.origTime || (prev ? prev.origTime : "") || ""),
         amount: row.amount || (prev ? prev.amount : 0) || 0,
+        merged: row.merged || false,
         vehicles: keepLocal ? prev.vehicles : (row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}]),
         site: keepLocal ? prev.site : row.channel,
         totalQty: row.qty||1, phone: effPhone,
@@ -950,6 +957,7 @@ async function reloadAllFromGAS(){
         site: keepLocal ? prev.site : row.channel,
         totalQty: row.qty||1, phone: effPhone,
         amount: row.amount || 0,
+        merged: row.merged || false,
         sms: !!(meta.sentSms && Object.keys(meta.sentSms).length),
         sentSMS: meta.sentSms || (prev ? prev.sentSMS : {}),
         memo: meta.memo || (prev ? prev.memo : ''),
@@ -1348,6 +1356,7 @@ async function loadBookingsFromGAS(){
         name: row.name,
         origTime: meta.origTime || '',
         amount: row.amount || 0,
+        merged: row.merged || false,
         vehicles: row.vehicles && row.vehicles.length ? row.vehicles : [{code:'-',qty:row.qty||1}],
         site: row.channel,
         totalQty: row.qty || 1,
@@ -1375,6 +1384,7 @@ async function loadBookingsFromGAS(){
         totalQty: row.qty || 1,
         phone: row.phone,
         amount: row.amount || 0,
+        merged: row.merged || false,
         sms: !!(meta.sentSms && Object.keys(meta.sentSms).length),
         sentSMS: meta.sentSms || {},
         memo: meta.memo || '',
@@ -1508,6 +1518,7 @@ setInterval(async ()=>{
         totalQty: row.qty||1,
         phone: keepLocal ? existing.phone : row.phone,
         amount: row.amount || (existing?existing.amount:0) || 0,
+        merged: row.merged || false,
         sms: existing ? existing.sms : false,
         sentSMS: existing ? existing.sentSMS : {},
         memo: existing ? existing.memo : '',
