@@ -319,6 +319,48 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
 .memo-card-footer{display:flex;justify-content:flex-end;margin-top:6px}
 
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
+/* ── 성능/설정 패치 스타일 ── */
+.sms-num.sending{opacity:.55;animation:smsPulse .9s ease-in-out infinite}
+@keyframes smsPulse{0%,100%{opacity:.4}50%{opacity:.85}}
+.sms-num:disabled{cursor:progress}
+.sync-pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;color:#9aa0a8;padding:4px 9px;border:1px solid #2a2d31;border-radius:6px;white-space:nowrap}
+.sync-pill .dot{width:6px;height:6px;border-radius:50%;background:#1D9E75;flex-shrink:0;transition:background .15s}
+.sync-pill.busy .dot{background:#E8A33D;animation:syncBlink .7s ease-in-out infinite}
+.sync-pill.bad .dot{background:#E24B4A;animation:none}
+.sync-pill.bad{color:#ff8a89;border-color:#5a2a2a}
+@keyframes syncBlink{0%,100%{opacity:.35}50%{opacity:1}}
+
+/* ── 설정 탭 ── */
+.cfg-wrap{max-width:720px;padding:14px 12px 40px}
+.cfg-card{background:#fff;border:1.5px solid #ddd;border-radius:8px;padding:14px 14px 16px;margin-bottom:12px}
+.cfg-card h3{font-size:13px;font-weight:900;color:#111;margin-bottom:3px}
+.cfg-card p.hint{font-size:11px;color:#888;line-height:1.6;margin-bottom:10px}
+.cfg-field{margin-bottom:10px}
+.cfg-field label{display:block;font-size:11px;font-weight:700;color:#555;margin-bottom:4px}
+.cfg-field input[type=text],.cfg-field input[type=url]{width:100%;font-family:'Noto Sans KR',sans-serif;font-size:12px;padding:8px 10px;border:1.5px solid #ddd;border-radius:6px;outline:none;color:#111;background:#fafafa}
+.cfg-field input:focus{border-color:#1D9E75;background:#fff}
+.cfg-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.cfg-btn{font-family:'Noto Sans KR',sans-serif;font-size:12px;font-weight:700;padding:7px 14px;border-radius:6px;border:1.5px solid #ddd;background:#fff;color:#333;cursor:pointer;transition:all .12s}
+.cfg-btn:hover{border-color:#bbb;background:#fafafa}
+.cfg-btn.green{background:#1D9E75;color:#fff;border-color:#1D9E75}
+.cfg-btn.green:hover{background:#178a65}
+.cfg-btn.red{color:#CC0000;border-color:#f0caca}
+.cfg-btn.red:hover{background:#fff5f5}
+.cfg-status{font-size:11.5px;font-weight:700;padding:8px 10px;border-radius:6px;margin-top:10px;line-height:1.6;display:none}
+.cfg-status.ok{display:block;background:#f0faf6;color:#1D9E75;border:1px solid #cbe9de}
+.cfg-status.err{display:block;background:#fff5f5;color:#CC0000;border:1px solid #f0caca}
+.cfg-status.wait{display:block;background:#fffbe6;color:#946200;border:1px solid #eee0a8}
+.cfg-seg{display:inline-flex;border:1.5px solid #ddd;border-radius:6px;overflow:hidden}
+.cfg-seg button{font-family:'Noto Sans KR',sans-serif;font-size:11.5px;font-weight:700;padding:6px 12px;border:none;background:#fff;color:#777;cursor:pointer;border-right:1px solid #eee}
+.cfg-seg button:last-child{border-right:none}
+.cfg-seg button.on{background:#1D9E75;color:#fff}
+.cfg-meter{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:4px}
+.cfg-meter div{background:#fafafa;border:1px solid #eee;border-radius:6px;padding:8px 10px}
+.cfg-meter .k{font-size:10px;font-weight:700;color:#999;margin-bottom:2px}
+.cfg-meter .v{font-size:15px;font-weight:900;color:#111}
+.cfg-meter .v.slow{color:#CC7700}
+.cfg-meter .v.bad{color:#CC0000}
+.cfg-code{background:#111;color:#d6e2dc;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;line-height:1.6;padding:10px 12px;border-radius:6px;white-space:pre;overflow-x:auto;margin-top:8px}
 </style>
 </head>
 <body>
@@ -331,6 +373,7 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
     <span id="balance-badges" class="balance-badges"></span>
   </div>
   <div class="hd-right">
+    <span class="sync-pill" id="sync-pill" title="시트 동기화 상태"><span class="dot"></span><span id="sync-pill-txt">대기</span></span>
     <button class="btn-sm green" onclick="toggleAddForm()">＋ 추가</button>
     <button class="btn-sm" onclick="refreshData()">↻</button>
   </div>
@@ -344,6 +387,7 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
   <button class="page-tab on" onclick="switchPage('resv',this)">예약관리</button>
   <button class="page-tab" onclick="switchPage('stats',this)">차량통계</button>
   <button class="page-tab" onclick="switchPage('sms',this)">문자내용</button>
+  <button class="page-tab" onclick="switchPage('config',this)">설정</button>
 </div>
 
 <!-- 1번: 예약관리 -->
@@ -491,11 +535,256 @@ td[ondblclick]:not([ondblclick=""]):hover::after{content:'✎';font-size:9px;col
   </div>
 </div>
 
+<!-- 4번: 설정 -->
+<div id="page-config" class="page-content">
+ <div class="cfg-wrap">
+
+  <div class="cfg-card">
+    <h3>연결할 구글시트</h3>
+    <p class="hint">대시보드는 Apps Script 웹앱을 거쳐 시트를 읽습니다. 시트를 새로 만들었거나 다른 시트를 보게 하려면 아래 두 칸을 바꾸세요. 변경 내용은 이 브라우저에만 저장되고, 저장 즉시 적용됩니다.</p>
+
+    <div class="cfg-field">
+      <label>Apps Script 웹앱 주소 (/exec 로 끝나는 주소)</label>
+      <input type="url" id="cfg-gas-url" placeholder="https://script.google.com/macros/s/……/exec" spellcheck="false">
+    </div>
+
+    <div class="cfg-field">
+      <label>구글시트 주소 또는 시트 ID (비워두면 웹앱이 원래 보던 시트를 그대로 사용)</label>
+      <input type="text" id="cfg-sheet-id" placeholder="https://docs.google.com/spreadsheets/d/……/edit" spellcheck="false">
+    </div>
+
+    <div class="cfg-row">
+      <button class="cfg-btn green" onclick="cfgSave()">저장하고 적용</button>
+      <button class="cfg-btn" onclick="cfgTest()">연결 확인</button>
+      <button class="cfg-btn" onclick="cfgResetUrl()">기본 주소로 되돌리기</button>
+    </div>
+    <div class="cfg-status" id="cfg-status"></div>
+  </div>
+
+  <div class="cfg-card">
+    <h3>자동 새로고침</h3>
+    <p class="hint">신규 예약을 얼마나 자주 확인할지 정합니다. 다른 탭을 보고 있거나 방금 버튼을 누른 직후에는 자동으로 건너뛰어서, 문자 발송이 새로고침에 밀리지 않습니다.</p>
+    <div class="cfg-seg" id="cfg-poll-seg">
+      <button data-v="10000" onclick="cfgSetPoll(10000)">10초</button>
+      <button data-v="20000" onclick="cfgSetPoll(20000)">20초</button>
+      <button data-v="45000" onclick="cfgSetPoll(45000)">45초</button>
+      <button data-v="0" onclick="cfgSetPoll(0)">끄기</button>
+    </div>
+    <p class="hint" style="margin:10px 0 4px">응답을 기다리는 최대 시간 — 이 시간을 넘기면 요청을 끊고 다시 조작할 수 있게 풀어줍니다.</p>
+    <div class="cfg-seg" id="cfg-timeout-seg">
+      <button data-v="8000" onclick="cfgSetTimeout(8000)">8초</button>
+      <button data-v="15000" onclick="cfgSetTimeout(15000)">15초</button>
+      <button data-v="25000" onclick="cfgSetTimeout(25000)">25초</button>
+    </div>
+  </div>
+
+  <div class="cfg-card">
+    <h3>지금 상태</h3>
+    <p class="hint">시트 왕복이 1.5초를 넘으면 Apps Script 쪽이 느린 것이고, 대기 요청이 계속 쌓이면 시트가 응답을 못 하고 있는 것입니다.</p>
+    <div class="cfg-meter">
+      <div><div class="k">마지막 동기화</div><div class="v" id="cfg-m-last">—</div></div>
+      <div><div class="k">평균 왕복</div><div class="v" id="cfg-m-avg">—</div></div>
+      <div><div class="k">대기 요청</div><div class="v" id="cfg-m-queue">0</div></div>
+      <div><div class="k">실패</div><div class="v" id="cfg-m-fail">0</div></div>
+    </div>
+    <div class="cfg-row">
+      <button class="cfg-btn" onclick="refreshData()">지금 새로 읽기</button>
+      <button class="cfg-btn red" onclick="cfgClearLocal()">이 브라우저 저장값 지우기</button>
+    </div>
+  </div>
+
+  <div class="cfg-card">
+    <h3>Apps Script 쪽에 넣어야 하는 코드</h3>
+    <p class="hint">시트 주소 바꾸기와 통합 읽기(getAll)를 쓰려면 Code.gs에 아래 두 조각을 추가하세요. 추가하지 않아도 대시보드는 예전 방식으로 그대로 동작합니다.</p>
+    <div class="cfg-code" id="cfg-snippet">// ① 시트 지정 — 기존 SpreadsheetApp.openById(…) 대신 사용
+function SS_(){
+  var id = PropertiesService.getScriptProperties().getProperty('SHEET_ID');
+  return id ? SpreadsheetApp.openById(id) : SpreadsheetApp.getActiveSpreadsheet();
+}
+
+// ② doGet 안의 action 분기에 추가
+if (action === 'setSheetId') {
+  var id = String(e.parameter.sheetId || '').trim();
+  var m = id.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  if (m) id = m[1];
+  var props = PropertiesService.getScriptProperties();
+  if (id) props.setProperty('SHEET_ID', id);
+  else props.deleteProperty('SHEET_ID');
+  return json({ ok: true, sheetId: id });
+}
+
+if (action === 'getAll') {
+  return json({
+    bookings:    getBookings_(),   // 기존 getBookings 로직을 함수로 분리
+    newBookings: getNew_(),
+    statusMap:   st.statusMap, metaMap: st.metaMap, updatedAtMap: st.updatedAtMap,
+    fleet:       getFleet_()
+  });
+}</div>
+  </div>
+
+ </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 // ===== Google Apps Script 웹앱 URL (구글시트 ↔ 홈페이지 연동) =====
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxxC6IMQChPla2pzSZONsHBK7iw93DWZEphDKO3Q5794iu8tVLN289JVTHIy8Fyo_-Mpw/exec';
+const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxxC6IMQChPla2pzSZONsHBK7iw93DWZEphDKO3Q5794iu8tVLN289JVTHIy8Fyo_-Mpw/exec';
+
+// ===========================================================================
+//  네트워크 코어 — 큐 / 타임아웃 / 우선순위 / 상태표시
+//  · 사용자가 누른 버튼(문자·완료처리)이 자동 새로고침보다 항상 먼저 나갑니다.
+//  · 응답이 없으면 정해진 시간에 끊어서 화면이 멈춘 채로 남지 않습니다.
+// ===========================================================================
+const CFG_KEY = 'coconara_cfg_v1';
+let CFG = (function(){
+  const d = { gasUrl:'', sheetId:'', pollMs:20000, timeoutMs:15000 };
+  try{ return Object.assign(d, JSON.parse(localStorage.getItem(CFG_KEY)||'{}')); }
+  catch(e){ return d; }
+})();
+function cfgPersist(){ try{ localStorage.setItem(CFG_KEY, JSON.stringify(CFG)); }catch(e){} }
+
+let GAS_URL = CFG.gasUrl || DEFAULT_GAS_URL;
+
+const NET = { inflight:0, queued:0, fails:0, lastOk:0, rtt:[] };
+
+function netNote(ms, ok){
+  if(ok){ NET.lastOk = Date.now(); NET.rtt.push(ms); if(NET.rtt.length>20) NET.rtt.shift(); NET.fails = 0; }
+  else NET.fails++;
+  netPaint();
+}
+function netAvg(){ return NET.rtt.length ? Math.round(NET.rtt.reduce((a,b)=>a+b,0)/NET.rtt.length) : 0; }
+let _paintQueued = false;
+function netPaint(){
+  if(_paintQueued) return;
+  _paintQueued = true;
+  requestAnimationFrame(()=>{
+    _paintQueued = false;
+    const pill = document.getElementById('sync-pill');
+    const txt  = document.getElementById('sync-pill-txt');
+    if(pill && txt){
+      const busy = NET.inflight + NET.queued;
+      pill.classList.toggle('busy', busy>0 && NET.fails===0);
+      pill.classList.toggle('bad', NET.fails>=2);
+      if(NET.fails>=2)   txt.textContent = '시트 응답없음';
+      else if(busy>0)    txt.textContent = busy>1 ? `동기화 ${busy}` : '동기화';
+      else if(NET.lastOk)txt.textContent = new Date(NET.lastOk).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+      else               txt.textContent = '대기';
+    }
+    if(document.getElementById('page-config') && document.getElementById('page-config').classList.contains('on')) cfgPaintMeters();
+  });
+}
+
+// 우선순위 큐 (동시 2개까지) — 숫자가 클수록 먼저 나감
+const GasQ = (function(){
+  const q = []; let running = 0, seq = 0;
+  const MAX = 6;   // 동시에 나가는 요청 수. 이걸 넘으면 줄을 서고, 급한 것부터 나갑니다.
+  function pump(){
+    while(running < MAX && q.length){
+      const job = q.shift();
+      NET.queued = q.length; running++; NET.inflight = running; netPaint();
+      const t0 = Date.now();
+      job.fn().then(
+        v => { netNote(Date.now()-t0, true);  job.resolve(v); },
+        e => { netNote(Date.now()-t0, false); job.reject(e); }
+      ).finally(()=>{ running--; NET.inflight = running; netPaint(); pump(); });
+    }
+    NET.queued = q.length;
+  }
+  return {
+    push(fn, priority){
+      priority = priority || 0;
+      return new Promise((resolve,reject)=>{
+        const job = {fn, resolve, reject, priority, seq: ++seq};
+        let i = q.length;
+        while(i>0 && q[i-1].priority < priority) i--;
+        q.splice(i, 0, job);
+        pump();
+      });
+    },
+    get length(){ return q.length + running; },
+    get pending(){ return q.length; }
+  };
+})();
+
+async function fetchT(url, opts, ms){
+  const ac = new AbortController();
+  const timer = setTimeout(()=>ac.abort(), ms || CFG.timeoutMs || 15000);
+  try{
+    const res = await fetch(url, Object.assign({}, opts, {signal: ac.signal}));
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    return res;
+  }catch(e){
+    if(e.name === 'AbortError') throw new Error('응답 시간 초과');
+    throw e;
+  }finally{ clearTimeout(timer); }
+}
+
+// 읽기: priority 3 (사용자 요청) / 0 (자동 새로고침)
+function gasGet(action, params, opt){
+  opt = opt || {};
+  const qs = new URLSearchParams(Object.assign({action}, params||{})).toString();
+  return GasQ.push(async ()=>{
+    const res = await fetchT(`${GAS_URL}?${qs}`, {}, opt.timeout);
+    return res.json();
+  }, opt.priority === undefined ? 0 : opt.priority);
+}
+// 쓰기: 기본 priority 6 — 자동 새로고침보다 항상 먼저
+function gasPost(body, opt){
+  opt = opt || {};
+  return GasQ.push(async ()=>{
+    const res = await fetchT(GAS_URL, {method:'POST', body: JSON.stringify(body)}, opt.timeout);
+    return res.json();
+  }, opt.priority === undefined ? 6 : opt.priority);
+}
+
+// 로딩/폴링 상태 (아래 함수들보다 먼저 선언돼야 첫 로드에서 오류가 나지 않습니다)
+// getAll(한 번에 읽기) 지원 여부는 브라우저에 기억해 둡니다 — 매번 확인하느라
+// 왕복 한 번을 버리지 않기 위해서입니다. 12시간 지나면 다시 확인합니다.
+const GETALL_KEY = 'coconara_getall_v1';
+function getAllFlagRead(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(GETALL_KEY)||'null');
+    if(!raw || raw.url !== GAS_URL) return null;
+    if(Date.now() - raw.t > 12*60*60*1000) return null;
+    return !!raw.v;
+  }catch(e){ return null; }
+}
+function getAllFlagWrite(v){
+  try{ localStorage.setItem(GETALL_KEY, JSON.stringify({url:GAS_URL, v:v?1:0, t:Date.now()})); }catch(e){}
+}
+let _getAllOk    = getAllFlagRead();   // 웹앱이 getAll 을 지원하는지
+let _loadingCore = false;  // 예약 데이터를 읽는 중인지
+let _pollBusy    = false;  // 자동 새로고침이 도는 중인지
+let _pollTimer   = null;
+
+// 마지막으로 화면을 만졌을 때 — 직후에는 자동 새로고침을 건너뜁니다
+let LAST_TOUCH = 0;
+document.addEventListener('pointerdown', ()=>{ LAST_TOUCH = Date.now(); }, true);
+document.addEventListener('keydown',     ()=>{ LAST_TOUCH = Date.now(); }, true);
+
+// 같은 내용이면 DOM을 다시 그리지 않습니다 (스크롤 튐·깜빡임 방지).
+// 칸을 편집하는 중이면 그 표는 건드리지 않고, 편집이 끝난 뒤 다시 그립니다.
+function setHtml(el, html){
+  if(!el) return;
+  if(el.__lastHtml === html && !el.__dirty) return;
+  const ae = document.activeElement;
+  if(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && el.contains(ae)){
+    el.__dirty = true;
+    return;
+  }
+  el.__dirty = false;
+  el.__lastHtml = html;
+  el.innerHTML = html;
+}
+// 표 안의 칸을 직접 손댔을 때 (편집 입력창 삽입 등) 다음 렌더를 강제합니다
+function markTablesDirty(){
+  ['new-tbl','active-tbl','done-tbl','walkin-tbl'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.__dirty = true;
+  });
+}
 
 function vClass(code){
   const base=code.replace('"','');
@@ -566,9 +855,8 @@ async function saveFleetToGAS(vehicle, field, value){
   try{
     const body = { action:'setFleet', vehicle };
     body[field] = Number(value)||0;
-    const res = await fetch(GAS_URL, { method:'POST', body: JSON.stringify(body) });
-    const data = await res.json();
-    if(data.error) toast('⚠️ 차량현황 저장 실패: '+data.error);
+    const data = await gasPost(body, {priority:6});
+    if(data && data.error) toast('⚠️ 차량현황 저장 실패: '+data.error);
   }catch(e){
     console.warn('차량현황 저장 실패:', e.message);
     toast('⚠️ 차량현황 저장 네트워크 오류');
@@ -597,8 +885,10 @@ function smsCell(b){
   const mainS=SMS.filter(s=>s.main);
   const extraS=SMS.filter(s=>!s.main);
   const isOpen=!!extraOpen[b.id];
-  const mainHtml=mainS.map(s=>`<button class="sms-num ${s.cls}${b.sentSMS[s.label]?' sent':''}" title="${s.title}${b.sentSMS[s.label]?' ✓발송':'미발송'}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`).join('');
-  const extraHtml=extraS.map(s=>`<button class="sms-num ${s.cls}${b.sentSMS[s.label]?' sent':''}" title="${s.title}${b.sentSMS[s.label]?' ✓발송':'미발송'}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`).join('');
+  const sending = b.sending||{};
+  const btn = s => `<button class="sms-num ${s.cls}${b.sentSMS[s.label]?' sent':''}${sending[s.label]?' sending':''}" title="${s.title}${sending[s.label]?' 발송 중…':(b.sentSMS[s.label]?' ✓발송':' 미발송')}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`;
+  const mainHtml=mainS.map(btn).join('');
+  const extraHtml=extraS.map(btn).join('');
   return `<div onclick="event.stopPropagation()">
     <div class="sms-wrap">
       <div class="sms-main-btns">${mainHtml}</div>
@@ -648,6 +938,7 @@ function editCell(id, field, el){
   const cur = field==='vehicles' ? b.vehicles.map(v=>v.code+(v.qty>1?v.qty:'')).join(' ')
             : field==='site' ? b.site
             : b[field];
+  markTablesDirty();
   const input = document.createElement('input');
   input.value = cur;
   if(field==='phone') input.type='tel';
@@ -700,6 +991,7 @@ function editCell(id, field, el){
 function editMemoCell(id, el){
   const b=[...bookings,...newBookings].find(x=>x.id===id);
   if(!b) return;
+  markTablesDirty();
   const input = document.createElement('input');
   input.value = b.memo || '';
   input.placeholder = '메모 입력...';
@@ -790,7 +1082,15 @@ function buildTable(list, mode='wait'){
   </table>`;
 }
 
+// 한 동작에서 render()가 여러 번 불려도 화면은 프레임당 한 번만 다시 그립니다.
+let _renderQueued = false;
 function render(){
+  if(_renderQueued) return;
+  _renderQueued = true;
+  requestAnimationFrame(()=>{ _renderQueued = false; renderNow(); });
+}
+
+function renderNow(){
   const all=[...bookings,...newBookings];
   let newList=newBookings.filter(b=>b.isNew&&!b.done&&!b.movedToWait);
   const timeOrder=['9시','10시','11시','12시','1시','2시','3시','4시','5시','6시','7시','8시'];
@@ -813,8 +1113,8 @@ function render(){
     doneList = doneList.filter(matchFn);
   }
 
-  document.getElementById('new-tbl').innerHTML=buildTable(newList,'new');
-  document.getElementById('active-tbl').innerHTML=buildTable(waitList,'wait');
+  setHtml(document.getElementById('new-tbl'),    buildTable(newList,'new'));
+  setHtml(document.getElementById('active-tbl'), buildTable(waitList,'wait'));
   renderDoneTbl(doneList);
   resvSummary();
 
@@ -844,12 +1144,8 @@ function moveToWait(id){
 
 async function moveNewToBookingsInGAS(time, name, phone){
   try{
-    const res = await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({ action:'moveNewToBookings', time, name, phone })
-    });
-    const data = await res.json();
-    if(data.error){
+    const data = await gasPost({ action:'moveNewToBookings', time, name, phone }, {priority:7});
+    if(data && data.error){
       console.warn('신규→예약자관리 이전 실패:', data.error);
       toast(`⚠️ ${name}님 시트 이전 실패`);
     } else {
@@ -872,14 +1168,7 @@ async function moveNewToBookingsInGAS(time, name, phone){
 // 시트 이전 후 전체 데이터를 다시 조용히 로드 (toast 없이)
 async function reloadAllFromGAS(){
   try{
-    const [resB, resN, resS] = await Promise.all([
-      fetch(`${GAS_URL}?action=getBookings`),
-      fetch(`${GAS_URL}?action=getNew`),
-      fetch(`${GAS_URL}?action=getStatus`)
-    ]);
-    const dataB = await resB.json();
-    const dataN = await resN.json();
-    const dataS = await resS.json();
+    const {dataB, dataN, dataS} = await fetchCore(4);
     if(dataB.error || dataN.error) return;
 
     const statusMap = (dataS && dataS.statusMap) || {};
@@ -1048,14 +1337,11 @@ function deleteBookingFromDone(id){
 
 async function deleteBookingRowFromGAS(b){
   try{
-    await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({
-        action:'deleteBookingRow',
-        sheet: b.isNew ? 'new' : 'bookings',
-        matchTime: b.time, matchName: b.name, matchPhone: b.phone
-      })
-    });
+    await gasPost({
+      action:'deleteBookingRow',
+      sheet: b.isNew ? 'new' : 'bookings',
+      matchTime: b.time, matchName: b.name, matchPhone: b.phone
+    }, {priority:7});
   }catch(e){
     console.warn('시트 행 삭제 실패:', e.message);
   }
@@ -1063,7 +1349,7 @@ async function deleteBookingRowFromGAS(b){
 
 async function deleteStatusFromGAS(key){
   try{
-    await fetch(GAS_URL, { method:'POST', body: JSON.stringify({ action:'deleteStatus', key }) });
+    await gasPost({ action:'deleteStatus', key }, {priority:7});
   }catch(e){
     console.warn('상태 삭제 실패:', e.message);
   }
@@ -1071,36 +1357,49 @@ async function deleteStatusFromGAS(key){
 
 function doCall(p){window.location.href='tel:'+p.replace(/-/g,'')}
 
+// 문자 버튼 — 누르는 즉시 화면에 반영하고, 발송은 뒤에서 진행합니다.
+// 실패하면 버튼을 원래대로 되돌리고 알려줍니다.
 async function sendSMS(id,typeId){
   const b=[...bookings,...newBookings].find(x=>x.id===id);
   const t=SMS.find(x=>x.id===typeId);
   if(!b||!t)return;
   if(!b.sentSMS) b.sentSMS={};
-  const ok = await sendSmsViaGAS(b.phone, t.label, t.title);
-  if(ok){
-    b.sentSMS[t.label]=true;  // label('1'~'6')로 통일 - smsCell과 GAS 저장 키 일치
-    b.sms=true;
-    saveStatusToGAS(statusKey(b), undefined, {sentSms:{[t.label]:true}});
+  if(!b.sending)  b.sending={};
+  if(b.sending[t.label]) return;               // 연타 방지
+
+  const before = b.sentSMS[t.label];
+  b.sending[t.label] = true;
+  b.sentSMS[t.label] = true;
+  b.sms = true;
+  LAST_TOUCH = Date.now();
+  render();                                     // ← 여기서 이미 눈에 보입니다
+
+  try{
+    const data = await gasPost(
+      { action:'sendSms', phone:b.phone, settingId:Number(t.label) },
+      { priority: 9 }                            // 가장 먼저 나가는 요청
+    );
+    if(data && data.error) throw new Error(data.error);
+    toast(`📨 [${t.title}] 발송 완료!`);
+    gasPost({ action:'setStatus', key:statusKey(b), meta:{sentSms:{[t.label]:true}} }, {priority:5})
+      .catch(()=>{});
+  }catch(e){
+    b.sentSMS[t.label] = before;                 // 되돌리기
+    toast(`⚠️ [${t.title}] 발송 안 됨 (${e.message}) — 버튼을 다시 눌러주세요`);
+  }finally{
+    delete b.sending[t.label];
+    render();
   }
-  render();
 }
 
-// 솔라피 실제 발송 (GAS 경유)
+// 솔라피 실제 발송 (GAS 경유) — 일괄발송에서 사용
 async function sendSmsViaGAS(phone, settingId, title){
   try{
-    const res = await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({ action:'sendSms', phone, settingId: Number(settingId) })
-    });
-    const data = await res.json();
-    if(data.error){
-      toast(`⚠️ [${title}] 발송 실패: ${data.error}`);
-      return false;
-    }
-    toast(`📨 [${title}] 발송 완료!`);
+    const data = await gasPost({ action:'sendSms', phone, settingId: Number(settingId) }, {priority:8});
+    if(data && data.error){ toast(`⚠️ [${title}] 발송 실패: ${data.error}`); return false; }
     return true;
   }catch(e){
-    toast(`⚠️ [${title}] 발송 실패 (네트워크)`);
+    toast(`⚠️ [${title}] 발송 실패 (${e.message})`);
     return false;
   }
 }
@@ -1144,11 +1443,7 @@ function submitBooking(){
 
 async function addBookingDirectToGAS(time, name, vehiclesStr, site, qty, phone){
   try{
-    const res = await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({ action:'addBookingDirect', time, name, vehiclesStr, site, qty, phone })
-    });
-    const data = await res.json();
+    const data = await gasPost({ action:'addBookingDirect', time, name, vehiclesStr, site, qty, phone }, {priority:7});
     console.log('[직접추가 저장]', {time, name, vehiclesStr, site, qty, phone}, '→', data);
     if(data.error){ toast('⚠️ 시트 저장 실패: '+data.error); }
     else{ toast('📝 시트 저장 완료 (row '+data.row+')'); }
@@ -1157,7 +1452,12 @@ async function addBookingDirectToGAS(time, name, vehiclesStr, site, qty, phone){
     toast('⚠️ 시트 저장 네트워크 오류: '+e.message);
   }
 }
-function refreshData(){toast('🔄 새로고침!')}
+async function refreshData(){
+  LAST_TOUCH = Date.now();
+  toast('🔄 시트에서 다시 읽는 중…');
+  await loadBookingsFromGAS();
+  loadClaims();
+}
 
 function setDate(){
   const d=new Date(),days=['일','월','화','수','목','금','토'];
@@ -1172,18 +1472,20 @@ function toast(msg){
 }
 
 setDate();calcFleet();updateStats();
-loadBookingsFromGAS();
-loadOpMemosFromGAS();
-loadBalances();
-loadClaims();
+// 예약표를 먼저 띄우고, 잔액·클레임·메모는 그 뒤에 읽습니다 (첫 화면이 빨리 뜨게)
+loadBookingsFromGAS().finally(()=>{
+  loadClaims();
+  loadOpMemosFromGAS();
+  loadBalances();
+});
 
 // ── 스마트스토어 취소/반품 요청 알림 배너 ──
 async function loadClaims(){
   const el = document.getElementById('claim-banner');
   if(!el) return;
+  if(document.hidden) return;
   try{
-    const res = await fetch(`${GAS_URL}?action=getClaims`);
-    const data = await res.json();
+    const data = await gasGet('getClaims', {}, {priority:1});
     const claims = (data && data.claims) || [];
     if(!claims.length){ el.style.display='none'; el.innerHTML=''; return; }
     el.innerHTML = claims.map(c=>`
@@ -1199,12 +1501,12 @@ async function loadClaims(){
 
 async function markClaimSeen(type, orderNo){
   try{
-    await fetch(GAS_URL, { method:'POST', body: JSON.stringify({ action:'markClaimSeen', type, orderNo }) });
+    await gasPost({ action:'markClaimSeen', type, orderNo }, {priority:7});
   }catch(e){}
   loadClaims();
 }
 // 1분마다 클레임 확인
-setInterval(loadClaims, 60000);
+setInterval(()=>{ if(!document.hidden) loadClaims(); }, 60000);
 
 
 // 솔라피/네이버광고 잔액 표시 (헤더 배너 옆)
@@ -1213,8 +1515,7 @@ async function loadBalances(){
   if(!el) return;
   let html = '';
   try{
-    const res = await fetch(`${GAS_URL}?action=getSolapiBalance`);
-    const data = await res.json();
+    const data = await gasGet('getSolapiBalance', {}, {priority:1});
     if(!data.error && data.total !== undefined){
       const total = Math.floor(Number(data.total));
       const low = total < 5000;
@@ -1222,8 +1523,7 @@ async function loadBalances(){
     }
   }catch(e){ /* 조용히 무시 */ }
   try{
-    const res2 = await fetch(`${GAS_URL}?action=getNaverAdBalance`);
-    const data2 = await res2.json();
+    const data2 = await gasGet('getNaverAdBalance', {}, {priority:1});
     if(!data2.error && data2.bizmoney !== undefined){
       const biz = Math.floor(Number(data2.bizmoney));
       const low2 = biz < 10000;
@@ -1233,7 +1533,7 @@ async function loadBalances(){
   el.innerHTML = html;
 }
 // 5분마다 잔액 갱신
-setInterval(loadBalances, 300000);
+setInterval(()=>{ if(!document.hidden) loadBalances(); }, 300000);
 
 
 // ── 운영 메모 (예약관리 탭 하단) ──
@@ -1242,8 +1542,7 @@ let opMemoNextId = 1;
 
 async function loadOpMemosFromGAS(){
   try{
-    const res = await fetch(`${GAS_URL}?action=getOpMemos`);
-    const data = await res.json();
+    const data = await gasGet('getOpMemos', {}, {priority:2});
     if(data.error) throw new Error(data.error);
     opMemos = (data.opMemos||[]).map(m=>({id:Number(m.id)||opMemoNextId++, title:m.title, body:m.body}));
     if(opMemos.length){
@@ -1257,10 +1556,7 @@ async function loadOpMemosFromGAS(){
 
 async function saveOpMemosToGAS(){
   try{
-    await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({ action:'saveOpMemos', memos: opMemos.map(m=>({id:String(m.id), title:m.title, body:m.body})) })
-    });
+    await gasPost({ action:'saveOpMemos', memos: opMemos.map(m=>({id:String(m.id), title:m.title, body:m.body})) }, {priority:5});
   }catch(e){
     console.warn('운영메모 저장 실패:', e.message);
   }
@@ -1303,18 +1599,65 @@ function renderOpMemos(){
 }
 
 // ── 구글시트(예약자관리, 신규) GAS 연동 ──
+// 예약 데이터 읽기.
+//  · 웹앱이 getAll 을 지원하면 요청 1건으로 끝납니다.
+//  · 지원하는지 아직 모를 때는 getAll 과 예전 방식(4건)을 "동시에" 보냅니다.
+//    그래야 확인하느라 왕복 한 번을 더 기다리는 일이 없습니다. 결과는 기억해 둡니다.
+function shapeGetAll(d){
+  return {
+    dataB: {bookings:    d.bookings    || []},
+    dataN: {newBookings: d.newBookings || []},
+    dataS: {statusMap:d.statusMap||{}, metaMap:d.metaMap||{}, updatedAtMap:d.updatedAtMap||{}},
+    dataF: {fleet: d.fleet || null}
+  };
+}
+function isGetAllPayload(d){
+  return !!(d && !d.error && (d.bookings || d.newBookings || d.statusMap));
+}
+function legacyRead(priority){
+  return Promise.all([
+    gasGet('getBookings', {}, {priority}),
+    gasGet('getNew',      {}, {priority}),
+    gasGet('getStatus',   {}, {priority}),
+    gasGet('getFleet',    {}, {priority})
+  ]).then(([dataB, dataN, dataS, dataF]) => ({dataB, dataN, dataS, dataF}));
+}
+
+async function fetchCore(priority){
+  // ① 지원한다고 이미 알고 있음 → 요청 1건
+  if(_getAllOk === true){
+    try{
+      const d = await gasGet('getAll', {}, {priority});
+      if(isGetAllPayload(d)) return shapeGetAll(d);
+      _getAllOk = false; getAllFlagWrite(false);
+    }catch(e){
+      if(String(e.message).includes('시간 초과')) throw e;
+      _getAllOk = false; getAllFlagWrite(false);
+    }
+    return legacyRead(priority);
+  }
+
+  // ② 지원 안 하는 걸 이미 알고 있음 → 예전 방식 4건
+  if(_getAllOk === false) return legacyRead(priority);
+
+  // ③ 아직 모름 → 둘 다 동시에 보내고, 되는 쪽을 씁니다 (기다리는 시간은 늘지 않음)
+  const pAll = gasGet('getAll', {}, {priority: priority + 1}).catch(()=>null);
+  const pOld = legacyRead(priority);
+  pOld.catch(()=>{});
+  const d = await pAll;
+  if(isGetAllPayload(d)){
+    _getAllOk = true; getAllFlagWrite(true);
+    return shapeGetAll(d);
+  }
+  _getAllOk = false; getAllFlagWrite(false);
+  return pOld;
+}
+
 async function loadBookingsFromGAS(){
+  if(_loadingCore) return;
+  _loadingCore = true;
   try{
-    const [resB, resN, resS, resF] = await Promise.all([
-      fetch(`${GAS_URL}?action=getBookings`),
-      fetch(`${GAS_URL}?action=getNew`),
-      fetch(`${GAS_URL}?action=getStatus`),
-      fetch(`${GAS_URL}?action=getFleet`)
-    ]);
-    const dataB = await resB.json();
-    const dataN = await resN.json();
-    const dataS = await resS.json();
-    const dataF = await resF.json();
+    const {dataB, dataN, dataS, dataF} = await fetchCore(3);
     if(dataB.error) throw new Error(dataB.error);
     if(dataN.error) throw new Error(dataN.error);
     const statusMap = (dataS && dataS.statusMap) || {};
@@ -1421,11 +1764,14 @@ async function loadBookingsFromGAS(){
 
     render();
     renderWalkinTbl();
-    toast('✅ 구글시트 연동 완료');
+    if(!window.__firstLoadDone){ window.__firstLoadDone = true; toast('✅ 구글시트 연동 완료'); }
   }catch(e){
-    console.warn('GAS 연동 실패, 샘플 데이터 사용:', e.message);
+    console.warn('시트 연동 실패:', e.message);
+    toast(`⚠️ 시트를 읽지 못했어요 (${e.message}) — 설정 탭에서 주소를 확인해주세요`);
     bookings.filter(b=>b.done).forEach(b=>doneOrder.push(b.id));
     render();
+  }finally{
+    _loadingCore = false;
   }
 }
 
@@ -1433,17 +1779,13 @@ async function loadBookingsFromGAS(){
 // 예약자관리/신규 시트의 셀을 원본 데이터에 직접 반영
 async function updateBookingCellInGAS(b, matchTime, matchName, matchPhone, field, value){
   try{
-    const res = await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({
-        action:'updateBookingCell',
-        sheet: b.isNew ? 'new' : 'bookings',
-        matchTime, matchName, matchPhone,
-        field, value
-      })
-    });
-    const data = await res.json();
-    if(data.error){ toast('⚠️ 시트 수정 실패: '+data.error); }
+    const data = await gasPost({
+      action:'updateBookingCell',
+      sheet: b.isNew ? 'new' : 'bookings',
+      matchTime, matchName, matchPhone,
+      field, value
+    }, {priority:7});
+    if(data && data.error){ toast('⚠️ 시트 수정 실패: '+data.error); }
   }catch(e){
     console.warn('셀 수정 실패:', e.message);
     toast('⚠️ 시트 수정 네트워크 오류');
@@ -1453,10 +1795,7 @@ async function updateBookingCellInGAS(b, matchTime, matchName, matchPhone, field
 // 시간/이름/연락처 변경으로 statusKey가 바뀔 때 처리상태(완료/대기/문자이력/메모)를 새 키로 이전
 async function migrateStatusKeyInGAS(oldKey, newKey){
   try{
-    await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({ action:'migrateStatusKey', oldKey, newKey })
-    });
+    await gasPost({ action:'migrateStatusKey', oldKey, newKey }, {priority:7});
   }catch(e){
     console.warn('상태 키 이전 실패:', e.message);
   }
@@ -1477,25 +1816,35 @@ async function saveStatusToGAS(key, status, meta){
     const body = { action:'setStatus', key };
     if(status !== undefined) body.status = status;
     if(meta !== undefined) body.meta = meta;
-    const res = await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    console.log('[상태저장]', key, status, meta, '→', data);
-    if(data.error){ toast('⚠️ 상태저장 실패: '+data.error); }
+    let data;
+    try{
+      data = await gasPost(body, {priority:6});
+    }catch(e1){
+      // 같은 값을 다시 쓰는 것이라 중복 위험이 없습니다 — 한 번 더 시도합니다
+      await new Promise(r=>setTimeout(r, 1500));
+      data = await gasPost(body, {priority:7});
+    }
+    if(data && data.error){ toast('⚠️ 상태저장 실패: '+data.error); }
   }catch(e){
     console.warn('상태 저장 실패:', e.message);
-    toast('⚠️ 상태저장 네트워크 오류');
+    toast('⚠️ 시트에 저장되지 않았어요 — 잠시 뒤 ↻ 를 눌러 확인해주세요');
   }
 }
 
-// 1분마다 신규예약 자동 갱신 (당일 신규예약 polling)
-setInterval(async ()=>{
+// 신규예약 자동 갱신
+//  · 다른 탭을 보고 있으면 건너뜁니다
+//  · 앞선 갱신이 아직 안 끝났으면 건너뜁니다 (요청이 쌓여서 먹통 되는 것 방지)
+//  · 방금 버튼을 눌렀으면 5초 양보합니다 (문자 발송이 밀리지 않게)
+async function pollNewBookings(){
+  if(document.hidden) return;
+  if(_pollBusy) return;
+  if(_loadingCore) return;
+  if(Date.now() - LAST_TOUCH < 5000) return;
+  if(GasQ.pending > 0) return;
+  _pollBusy = true;
   try{
-    const res = await fetch(`${GAS_URL}?action=getNew`);
-    const data = await res.json();
-    if(data.error) return;
+    const data = await gasGet('getNew', {}, {priority:0});
+    if(!data || data.error) return;
     const prevCount = newBookings.filter(b=>b.isNew && !b.movedToWait).length;
 
     // 신규 시트에서 온 항목들
@@ -1544,7 +1893,21 @@ setInterval(async ()=>{
     if(newCount > prevCount) toast(`🔴 신규예약 ${newCount-prevCount}건 도착!`);
     render();
   }catch(e){ /* 조용히 무시 */ }
-}, 20000);
+  finally{ _pollBusy = false; }
+}
+
+function restartPolling(){
+  if(_pollTimer) clearInterval(_pollTimer);
+  _pollTimer = null;
+  const ms = Number(CFG.pollMs)||0;
+  if(ms >= 5000) _pollTimer = setInterval(pollNewBookings, ms);
+}
+restartPolling();
+
+// 다른 탭 갔다 돌아오면 한 번 맞춰줍니다
+document.addEventListener('visibilitychange', ()=>{
+  if(!document.hidden && CFG.pollMs) setTimeout(pollNewBookings, 400);
+});
 
 // ── 문자내용 탭 ──
 const SMS_BADGE_COLORS = [
@@ -1708,8 +2071,7 @@ let smsConfigLoaded = false;
 
 async function loadSmsConfigFromGAS(){
   try{
-    const res = await fetch(`${GAS_URL}?action=getSmsConfig`);
-    const data = await res.json();
+    const data = await gasGet('getSmsConfig', {}, {priority:3});
     if(data.error) throw new Error(data.error);
     if(data.settings && data.settings.length){
       data.settings.forEach(s=>{
@@ -1738,15 +2100,11 @@ async function loadSmsConfigFromGAS(){
 
 async function saveSmsConfigToGAS(){
   try{
-    const res = await fetch(GAS_URL, {
-      method:'POST',
-      body: JSON.stringify({
-        action:'saveSmsConfig',
-        settings: smsSettings.map(s=>({id:s.id, name:s.name, body:s.body})),
-        memos: memos.map(m=>({id:'memo'+m.id, title:m.title, body:m.body}))
-      })
-    });
-    const data = await res.json();
+    const data = await gasPost({
+      action:'saveSmsConfig',
+      settings: smsSettings.map(s=>({id:s.id, name:s.name, body:s.body})),
+      memos: memos.map(m=>({id:'memo'+m.id, title:m.title, body:m.body}))
+    }, {priority:6});
     if(data.error){ toast('⚠️ 저장 실패: '+data.error); return false; }
     return true;
   }catch(e){
@@ -1854,6 +2212,7 @@ function nowTime(){
 }
 
 async function sendWalkinSmsRow(id, smsId){
+  LAST_TOUCH = Date.now();
   const w = walkinList.find(x=>x.id===id);
   const t = SMS.find(x=>x.id===smsId);
   if(!w||!t) return;
@@ -1908,27 +2267,44 @@ function updateBulkBar(){
     bar.style.display='none';
   }
 }
+// 일괄발송 — 선택한 사람이 바로 "발송 중"으로 바뀌고, 끝나는 순서대로 채워집니다.
 async function bulkSendSms(typeId){
   const t = SMS.find(x=>x.id===typeId);
   if(!t) return;
   const ids = [...bulkSelected];
   if(!ids.length) return;
-  toast(`📨 ${ids.length}건 [${t.title}] 발송 시작...`);
-  for(const id of ids){
-    const b=[...bookings,...newBookings].find(x=>x.id===id);
-    if(!b) continue;
+
+  LAST_TOUCH = Date.now();
+  const targets = ids
+    .map(id => [...bookings,...newBookings].find(x=>x.id===id))
+    .filter(Boolean);
+
+  targets.forEach(b=>{
     if(!b.sentSMS) b.sentSMS={};
+    if(!b.sending)  b.sending={};
+    b.sending[t.label] = true;
+  });
+  render();
+  toast(`📨 ${targets.length}건 [${t.title}] 발송 중…`);
+
+  let done = 0, fail = 0;
+  await Promise.all(targets.map(async b=>{
     const ok = await sendSmsViaGAS(b.phone, t.label, t.title);
     if(ok){
-      b.sentSMS[t.label]=true;
-      b.sms=true;
-      saveStatusToGAS(statusKey(b), undefined, {sentSms:{[t.label]:true}});
-    }
-  }
+      b.sentSMS[t.label] = true;
+      b.sms = true;
+      gasPost({action:'setStatus', key:statusKey(b), meta:{sentSms:{[t.label]:true}}}, {priority:5}).catch(()=>{});
+      done++;
+    } else fail++;
+    delete b.sending[t.label];
+    render();
+  }));
+
   bulkSelected.clear();
   updateBulkBar();
-  toast(`✅ 일괄발송 완료 (${ids.length}건)`);
   render();
+  toast(fail ? `⚠️ ${done}건 보냄 · ${fail}건 실패 — 실패한 사람은 번호를 다시 눌러주세요`
+             : `✅ ${done}건 발송 완료`);
 }
 
 // ── 대기 목록 드래그로 순서 변경 ──
@@ -2062,7 +2438,7 @@ function renderWalkinTbl(){
       <td onclick="event.stopPropagation()"><div style="display:flex;gap:0;flex-wrap:nowrap;align-items:center">${btns}</div></td>
     </tr>`;
   }).join('');
-  el.innerHTML=`<table><thead><tr><th>완료</th><th>시간</th><th>구분</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th></tr></thead><tbody>${rows}</tbody></table>`;
+  setHtml(el, `<table><thead><tr><th>완료</th><th>시간</th><th>구분</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th></tr></thead><tbody>${rows}</tbody></table>`);
 }
 
 // 완료 섹터 렌더 (예약 완료 + 현장손님 완료 합산)
@@ -2133,7 +2509,7 @@ function renderDoneTbl(filteredList){
     </tr>`;
   }).join('');
 
-  el.innerHTML = `<table>${thead}<tbody>${resvRows}${walkinRows}</tbody></table>`;
+  setHtml(el, `<table>${thead}<tbody>${resvRows}${walkinRows}</tbody></table>`);
   const dc=document.getElementById('done-count');
   if(dc) dc.textContent=`${resvDone.length+walkinDone.length}건`;
 }
@@ -2156,6 +2532,138 @@ function switchPage(name, el){
   document.getElementById('page-'+name).classList.add('on');
   if(name==='stats') loadStats();
   if(name==='sms'){ if(!smsConfigLoaded) loadSmsConfigFromGAS(); else renderSmsPage(); }
+  if(name==='config') cfgOpen();
+}
+
+// ===========================================================================
+//  설정 탭
+// ===========================================================================
+function cfgOpen(){
+  const u = document.getElementById('cfg-gas-url');
+  const s = document.getElementById('cfg-sheet-id');
+  if(u) u.value = CFG.gasUrl || DEFAULT_GAS_URL;
+  if(s) s.value = CFG.sheetId || '';
+  cfgPaintSegs();
+  cfgPaintMeters();
+}
+
+function cfgPaintSegs(){
+  document.querySelectorAll('#cfg-poll-seg button').forEach(b=>
+    b.classList.toggle('on', Number(b.dataset.v) === Number(CFG.pollMs)));
+  document.querySelectorAll('#cfg-timeout-seg button').forEach(b=>
+    b.classList.toggle('on', Number(b.dataset.v) === Number(CFG.timeoutMs)));
+}
+
+function cfgPaintMeters(){
+  const set = (id, v, cls) => {
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = v;
+    el.className = 'v' + (cls ? ' '+cls : '');
+  };
+  set('cfg-m-last', NET.lastOk ? new Date(NET.lastOk).toLocaleTimeString('ko-KR') : '—');
+  const avg = netAvg();
+  set('cfg-m-avg', avg ? avg+'ms' : '—', avg>3000 ? 'bad' : avg>1500 ? 'slow' : '');
+  set('cfg-m-queue', String(GasQ.length), GasQ.length>3 ? 'bad' : '');
+  set('cfg-m-fail', String(NET.fails), NET.fails>0 ? 'bad' : '');
+}
+
+function cfgMsg(kind, html){
+  const el = document.getElementById('cfg-status');
+  if(!el) return;
+  el.className = 'cfg-status ' + kind;
+  el.innerHTML = html;
+}
+
+function cfgSheetIdOf(raw){
+  const v = String(raw||'').trim();
+  if(!v) return '';
+  const m = v.match(/\/d\/([a-zA-Z0-9-_]+)/);
+  return m ? m[1] : v;
+}
+
+async function cfgSave(){
+  const url = String(document.getElementById('cfg-gas-url').value||'').trim();
+  const sid = cfgSheetIdOf(document.getElementById('cfg-sheet-id').value);
+
+  if(!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url)){
+    cfgMsg('err', '웹앱 주소는 <b>https://script.google.com/macros/s/…/exec</b> 형태여야 합니다. 배포 화면의 "웹 앱 URL"을 그대로 붙여넣어 주세요.');
+    return;
+  }
+
+  CFG.gasUrl  = (url === DEFAULT_GAS_URL) ? '' : url;
+  CFG.sheetId = sid;
+  cfgPersist();
+  GAS_URL = url;
+  _getAllOk = null;
+  try{ localStorage.removeItem(GETALL_KEY); }catch(e){}
+
+  cfgMsg('wait', '적용하는 중…');
+
+  if(sid){
+    try{
+      const r = await gasGet('setSheetId', {sheetId: sid}, {priority:9});
+      if(!r || r.error) throw new Error((r&&r.error) || '웹앱이 setSheetId를 모릅니다');
+    }catch(e){
+      cfgMsg('err', `주소는 저장했지만 시트 지정에 실패했습니다 — ${e.message}<br>Apps Script에 아래 <b>setSheetId</b> 코드를 추가한 뒤 다시 저장해주세요.`);
+      await loadBookingsFromGAS();
+      return;
+    }
+  }
+
+  await loadBookingsFromGAS();
+  const n = bookings.length + newBookings.length;
+  cfgMsg('ok', `연결했습니다. 예약 ${n}건을 읽었습니다.`);
+  toast('✅ 설정 저장 완료');
+}
+
+async function cfgTest(){
+  const url = String(document.getElementById('cfg-gas-url').value||'').trim() || GAS_URL;
+  cfgMsg('wait', '확인하는 중…');
+  const prev = GAS_URL;
+  GAS_URL = url;
+  cfgRecheckGetAll();
+  const t0 = Date.now();
+  try{
+    const core = await fetchCore(9);
+    const ms = Date.now()-t0;
+    if(!core.dataB || core.dataB.error) throw new Error((core.dataB&&core.dataB.error)||'응답이 비어 있습니다');
+    const cnt = (core.dataB.bookings||[]).length;
+    const all = _getAllOk === true
+      ? '한 번에 읽기 작동 중 (요청 1건)'
+      : '아직 미적용 — 예전 방식으로 요청 4건을 보냅니다. 아래 코드를 넣으면 더 빨라집니다.';
+    cfgMsg('ok', `연결됨 · 예약 ${cnt}건 · 왕복 ${ms}ms<br>${all}`);
+  }catch(e){
+    cfgMsg('err', `연결 실패 — ${e.message}<br>배포가 "모든 사용자"로 열려 있는지, 주소 끝이 /exec 인지 확인해주세요.`);
+  }finally{
+    GAS_URL = prev;
+  }
+}
+
+function cfgRecheckGetAll(){
+  _getAllOk = null;
+  try{ localStorage.removeItem(GETALL_KEY); }catch(e){}
+}
+
+function cfgResetUrl(){
+  document.getElementById('cfg-gas-url').value = DEFAULT_GAS_URL;
+  cfgMsg('wait', '기본 주소를 넣었습니다. 저장하고 적용을 눌러주세요.');
+}
+
+function cfgSetPoll(ms){
+  CFG.pollMs = ms; cfgPersist(); cfgPaintSegs(); restartPolling();
+  toast(ms ? `🔄 ${ms/1000}초마다 확인합니다` : '🔄 자동 새로고침을 껐습니다');
+}
+
+function cfgSetTimeout(ms){
+  CFG.timeoutMs = ms; cfgPersist(); cfgPaintSegs();
+  toast(`⏱️ ${ms/1000}초까지 기다립니다`);
+}
+
+function cfgClearLocal(){
+  if(!confirm('이 브라우저에 저장된 주소·주기 설정을 지웁니다. 구글시트 내용은 그대로입니다. 계속할까요?')) return;
+  try{ localStorage.removeItem(CFG_KEY); sessionStorage.clear(); }catch(e){}
+  location.reload();
 }
 
 // ── 차량통계 ──
@@ -2167,10 +2675,8 @@ let statsData=[];
 async function loadStats(){
   document.getElementById('stats-table').innerHTML='<div style="text-align:center;padding:20px;color:#bbb;font-size:12px">구글시트 연동 중...</div>';
   try{
-    const res=await fetch(`${GAS_URL}?action=getStats`);
-    if(!res.ok) throw new Error();
-    const data=await res.json();
-    if(data.error) throw new Error(data.error);
+    const data = await gasGet('getStats', {}, {priority:3});
+    if(!data || data.error) throw new Error((data&&data.error)||'응답 없음');
     statsData = data.stats || [];
     renderStats();
     document.getElementById('sync-info').textContent=`마지막 업데이트: ${new Date().toLocaleTimeString('ko-KR')}`;
