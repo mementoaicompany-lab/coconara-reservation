@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>코코나라 예약관리</title>
-<meta name="coconara-web-version" content="2026.09.10.2">
+<meta name="coconara-web-version" content="2026.09.10.3">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -649,7 +649,7 @@ const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxxC6IMQChPla2p
 // ===========================================================================
 const CFG_KEY = 'coconara_cfg_v1';
 let CFG = (function(){
-  const d = { gasUrl:'', sheetId:'', pollMs:60000, timeoutMs:25000 };
+  const d = { gasUrl:'', sheetId:'', pollMs:60000, timeoutMs:60000 };
   try{ return Object.assign(d, JSON.parse(localStorage.getItem(CFG_KEY)||'{}')); }
   catch(e){ return d; }
 })();
@@ -665,7 +665,7 @@ const READ_NAMES={getBookings:'예약 목록',getNew:'신규 예약',getStatus:'
 const READ_PHASES={queued:'요청 대기',request:'서버 응답 대기',validation:'응답 확인',authorization:'연결 확인',dns:'서버 주소 확인',connect:'서버 연결',tls:'보안 연결',headers:'서버 응답 대기',redirect:'구글 연결 이동',body:'데이터 수신',complete:'완료'};
 const READ_CODES={OK:'성공',INVALID_REQUEST:'요청 확인 필요',UNAUTHORIZED:'연결 권한 확인 필요',TIMEOUT:'시간 초과',HTTP_ERROR:'서버 응답 오류',NETWORK_ERROR:'연결 오류',REDIRECT_BLOCKED:'연결 이동 확인 필요',REDIRECT_LIMIT:'연결 이동 지연',RESPONSE_TOO_LARGE:'응답 크기 초과',INVALID_RESPONSE:'응답 형식 확인 필요',INVALID_PAYLOAD:'예약 데이터 형식 확인 필요',BRIDGE_ERROR:'앱 연결 오류'};
 let _readAttempt=0, _diagnosticTick=null;
-function readTimeoutMs(){return Number(CFG.timeoutMs)||25000;}
+function readTimeoutMs(){return Number(CFG.timeoutMs)||60000;}
 function cleanReadDiagnostic(raw,action,transport,defaults){
   raw=raw && typeof raw==='object'?raw:{};defaults=defaults||{};
   const number=(value,fallback,max)=>Number.isFinite(Number(value)) && Number(value)>=0?Math.min(max,Math.round(Number(value))):fallback;
@@ -838,7 +838,7 @@ const GasQ = (function(){
 
 async function fetchT(url, opts, ms, onDiagnostic){
   const ac = new AbortController();
-  const timeout=Number(ms || CFG.timeoutMs) || 25000;
+  const timeout=Number(ms || CFG.timeoutMs) || 60000;
   let timer;
   const startedAt=Date.now();let phase='headers',status=null,diagnosticClosed=false;
   const report=code=>{if(!diagnosticClosed && onDiagnostic)onDiagnostic({phase,code,status,elapsedMs:Date.now()-startedAt,timeoutMs:timeout});};
