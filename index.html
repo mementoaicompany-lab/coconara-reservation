@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>코코나라 예약관리</title>
-<meta name="coconara-web-version" content="2026.09.10.1">
+<meta name="coconara-web-version" content="2026.09.10.2">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -611,6 +611,8 @@ button:disabled{cursor:not-allowed}
       <button data-v="8000" onclick="cfgSetTimeout(8000)">8초</button>
       <button data-v="15000" onclick="cfgSetTimeout(15000)">15초</button>
       <button data-v="25000" onclick="cfgSetTimeout(25000)">25초</button>
+      <button data-v="45000" onclick="cfgSetTimeout(45000)">45초</button>
+      <button data-v="60000" onclick="cfgSetTimeout(60000)">60초</button>
     </div>
   </div>
 
@@ -674,7 +676,7 @@ function cleanReadDiagnostic(raw,action,transport,defaults){
     code:Object.hasOwn(READ_CODES,raw.code)?raw.code:(defaults.code||'NETWORK_ERROR'),
     status:Number.isInteger(raw.status) && raw.status>=100 && raw.status<=599?raw.status:null,
     elapsedMs:number(raw.elapsedMs,defaults.elapsedMs||0,3600000),
-    timeoutMs:number(raw.timeoutMs,defaults.timeoutMs||readTimeoutMs(),25000)
+    timeoutMs:number(raw.timeoutMs,defaults.timeoutMs||readTimeoutMs(),60000)
   };
 }
 function noteReadDiagnostic(attempt,action,raw,state,startedAt){
@@ -687,7 +689,7 @@ function noteReadDiagnostic(attempt,action,raw,state,startedAt){
 function paintReadDiagnostics(){
   const method='전체 예약은 브라우저에서 조회합니다 · 요청마다 최대 '+(readTimeoutMs()/1000)+'초';
   document.getElementById('reservation-read-method').textContent=method;
-  document.getElementById('cfg-read-timeout').textContent='이전 설정을 유지합니다. 응답이 늦으면 25초를 선택할 수 있습니다.';
+  document.getElementById('cfg-read-timeout').textContent='이전 설정을 유지합니다. 응답이 늦으면 45초 또는 60초를 선택할 수 있습니다.';
   const rows=document.getElementById('reservation-read-diagnostic-rows');
   const fragment=document.createDocumentFragment();
   for(const item of CORE.readDiagnostics||[]){
