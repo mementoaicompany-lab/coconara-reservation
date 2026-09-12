@@ -1,0 +1,12 @@
+.resizable-booking-table{table-layout:fixed;max-width:none;overflow:visible}
+.resizable-booking-table thead th{position:relative;padding-right:12px}
+.resizable-booking-table td{overflow:hidden;text-overflow:ellipsis}
+.resizable-booking-table .td-memo{max-width:none}
+.resizable-booking-table .time-group-hdr td{overflow:visible}
+.column-resize-handle{position:absolute;top:0;right:-4px;bottom:0;width:9px;z-index:3;cursor:col-resize;touch-action:none;user-select:none}
+.column-resize-handle::after{content:'';position:absolute;top:20%;bottom:20%;left:4px;width:1px;background:#6d8078}
+.column-resize-handle:hover::after,.column-resize-handle:focus::after{width:3px;left:3px;background:#8be0b6}
+.column-resize-handle:focus{outline:2px solid #8be0b6;outline-offset:-2px}
+body.resizing-columns,body.resizing-columns *{cursor:col-resize!important;user-select:none!important}
+.time-group-hdr[data-empty="true"]{opacity:1;background:#edf1ee;color:#68786e}
+.time-group-hdr[data-empty="true"] .tgh-veh{opacity:.7}

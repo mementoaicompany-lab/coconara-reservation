@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>코코나라 예약관리</title>
-<meta name="coconara-web-version" content="2026.09.10.3">
+<meta name="coconara-web-version" content="2026.09.13.1">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -393,7 +393,7 @@ button:disabled{cursor:not-allowed}
 <div class="hd">
   <div class="hd-left">
     <div class="logo">코코<em>나라</em></div>
-    <div class="today" id="today-lbl"></div><span class="platform-view-label">예약 홈페이지 · 9/10 개선판</span>
+    <div class="today" id="today-lbl"></div><span class="platform-view-label">예약 운영 화면</span>
     <span id="balance-badges" class="balance-badges"></span>
   </div>
   <div class="hd-right">
@@ -638,7 +638,10 @@ button:disabled{cursor:not-allowed}
 
 <div class="toast" id="toast"></div>
 
+<link rel="stylesheet" href="reservation-ui.css?v=2026.09.13.1">
+<script src="reservation-ui.js?v=2026.09.13.1"></script>
 <script>
+const escapeHtml=CoconaraUI.escapeHtml;
 // ===== Google Apps Script 웹앱 URL (구글시트 ↔ 홈페이지 연동) =====
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbxxC6IMQChPla2pzSZONsHBK7iw93DWZEphDKO3Q5794iu8tVLN289JVTHIy8Fyo_-Mpw/exec';
 
@@ -671,23 +674,23 @@ function cleanReadDiagnostic(raw,action,transport,defaults){
   const number=(value,fallback,max)=>Number.isFinite(Number(value)) && Number(value)>=0?Math.min(max,Math.round(Number(value))):fallback;
   return {
     action:READ_ACTIONS.includes(action)?action:null,
-    transport:'browser',
+    transport:transport==='native'?'native':'browser',
     phase:Object.hasOwn(READ_PHASES,raw.phase)?raw.phase:(defaults.phase||'request'),
     code:Object.hasOwn(READ_CODES,raw.code)?raw.code:(defaults.code||'NETWORK_ERROR'),
     status:Number.isInteger(raw.status) && raw.status>=100 && raw.status<=599?raw.status:null,
     elapsedMs:number(raw.elapsedMs,defaults.elapsedMs||0,3600000),
-    timeoutMs:number(raw.timeoutMs,defaults.timeoutMs||readTimeoutMs(),60000)
+    timeoutMs:number(raw.timeoutMs,defaults.timeoutMs||readTimeoutMs(),90000)
   };
 }
 function noteReadDiagnostic(attempt,action,raw,state,startedAt){
   if(attempt!==_readAttempt) return;
   const index=READ_ACTIONS.indexOf(action);if(index<0)return;
-  const transport='browser';
+  const transport=window.coconaraReservation?.read?'native':'browser';
   CORE.readDiagnostics[index]={...cleanReadDiagnostic(raw,action,transport,{timeoutMs:readTimeoutMs()}),state,startedAt:startedAt||0};
   netPaint();
 }
 function paintReadDiagnostics(){
-  const method='전체 예약은 브라우저에서 조회합니다 · 요청마다 최대 '+(readTimeoutMs()/1000)+'초';
+  const method='전체 예약은 '+(window.coconaraReservation?.read?'앱에서 직접':'브라우저에서')+' 조회합니다 · 요청마다 최대 '+(readTimeoutMs()/1000)+'초';
   document.getElementById('reservation-read-method').textContent=method;
   document.getElementById('cfg-read-timeout').textContent='이전 설정을 유지합니다. 응답이 늦으면 45초 또는 60초를 선택할 수 있습니다.';
   const rows=document.getElementById('reservation-read-diagnostic-rows');
@@ -913,6 +916,7 @@ function setHtml(el, html){
   el.__dirty = false;
   el.__lastHtml = html;
   el.innerHTML = html;
+  CoconaraUI.enhanceTables(el);
   applyReservationReadOnlyControls();
 }
 // 표 안의 칸을 직접 손댔을 때 (편집 입력창 삽입 등) 다음 렌더를 강제합니다
@@ -933,7 +937,7 @@ function vClass(code){
 function vHtml(vehicles){
   return vehicles.map(v=>{
     const q=v.qty>1?v.qty:'';
-    return `<span class="${vClass(v.code)}">${v.code}${q}</span>`;
+    return `<span class="${vClass(v.code)}">${escapeHtml(v.code)}${escapeHtml(q)}</span>`;
   }).join('<span style="color:#ddd;font-size:10px;margin:0 1px">·</span>');
 }
 
@@ -1004,7 +1008,7 @@ function smsCell(b){
   const extraS=SMS.filter(s=>!s.main);
   const isOpen=!!extraOpen[b.id];
   const sending = b.sending||{};
-  const btn = s => `<button class="sms-num ${s.cls}${b.sentSMS[s.label]?' sent':''}${sending[s.label]?' sending':''}" title="${s.title}${sending[s.label]?' 발송 중…':(b.sentSMS[s.label]?' ✓발송':' 미발송')}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`;
+  const btn = s => `<button class="sms-num ${s.cls}${b.sentSMS[s.label]?' sent':''}${sending[s.label]?' sending':''}" title="${escapeHtml(s.title)}${sending[s.label]?' 발송 중…':(b.sentSMS[s.label]?' ✓발송':' 미발송')}" onclick="sendSMS(${b.id},'${s.id}')">${s.label}</button>`;
   const mainHtml=mainS.map(btn).join('');
   const extraHtml=extraS.map(btn).join('');
   return `<div onclick="event.stopPropagation()">
@@ -1071,40 +1075,45 @@ function editCell(id, field, el){
   function save(){
     const val = input.value.trim();
     if(!val){ render(); return; }
+    if(val===String(cur||'').trim()){render();return;}
     const oldKey = statusKey(b);
     const matchTime = b.time, matchName = b.name, matchPhone = b.phone;
+    const draft = JSON.parse(JSON.stringify(b));
     if(field==='vehicles'){
-      b.vehicles = val.split(/\s+/).map(s=>{
+      draft.vehicles = val.split(/\s+/).map(s=>{
         const m=s.match(/^([가-힣a-zA-Z"]+)(\d*)$/);
         return m?{code:m[1],qty:parseInt(m[2])||1}:{code:s,qty:1};
       });
-      b.totalQty = b.vehicles.reduce((s,v)=>s+v.qty,0);
+      draft.totalQty = draft.vehicles.reduce((s,v)=>s+v.qty,0);
     } else if(field==='phone'){
-      b[field] = autoHyphen(val);
+      draft[field] = autoHyphen(val);
     } else if(field==='site'){
-      b.site = val;
+      draft.site = val;
     } else if(field==='time'){
       const newTime = normTime(val); // "13:30"/"13시30분"/"13" 등 어떤 입력이든 "1시"로 통일
       if(newTime !== matchTime){
-        if(!b.origTime) b.origTime = matchTime;      // 최초 원래 시간 기억
-        if(newTime === b.origTime) b.origTime = '';  // 원래 시간으로 되돌리면 이력 제거
+        if(!draft.origTime) draft.origTime = matchTime;      // 최초 원래 시간 기억
+        if(newTime === draft.origTime) draft.origTime = '';  // 원래 시간으로 되돌리면 이력 제거
       }
-      b.time = newTime;
+      draft.time = newTime;
     } else {
-      b[field] = val;
+      draft[field] = val;
     }
+    const newValForGAS = field==='vehicles' ? val : (field==='phone' ? draft.phone : (field==='time' ? draft.time : val));
+    const newKey = statusKey(draft);
+    const metaPatch = field==='time' ? {origTime:draft.origTime||''} : null;
+    try{
+      // The durable queue must accept the draft before the displayed model changes.
+      queueBookingEdit(draft,matchTime,matchName,matchPhone,field,newValForGAS,oldKey,newKey,metaPatch);
+    }catch(error){toast('⚠️ 수정 작업을 저장하지 못했습니다. 저장 대기를 확인해 주세요.');render();return;}
+    // Preserve queue/SMS indicators that enqueueOperation just applied.
+    if(field==='vehicles')Object.assign(b,{vehicles:draft.vehicles,totalQty:draft.totalQty});
+    else b[field]=draft[field];
+    if(field==='time')b.origTime=draft.origTime;
+    b._editedAt=Date.now();
     render();
-    b._editedAt = Date.now(); // 폴링/재로드가 수정사항을 덮어쓰지 않도록 보호
-    const newValForGAS = field==='vehicles' ? val : (field==='phone' ? b.phone : (field==='time' ? b.time : val));
-    updateBookingCellInGAS(b, matchTime, matchName, matchPhone, field, newValForGAS);
-    if(field==='time'||field==='name'||field==='phone'){
-      const newKey = statusKey(b);
-      const metaPatch = field==='time' ? {origTime: b.origTime || ''} : null;
-      persistKeyChangeAndMeta(oldKey, newKey, metaPatch);
-    }
   }
-  input.addEventListener('blur', save);
-  input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); if(e.key==='Escape'){ render(); } });
+  CoconaraUI.bindInlineEditor(input,{save,cancel:render});
 }
 
 function editMemoCell(id, el){
@@ -1121,16 +1130,19 @@ function editMemoCell(id, el){
   input.focus(); input.select();
   function save(){
     const val = input.value.trim();
+    if(val===(b.memo||'')){render();return;}
+    const key=statusKey(b);
+    try{
+      enqueueOperation([{action:'setStatus',key,meta:{memo:val}}],{entity:key,label:'비고 수정',effects:[bookingEffect(key,{memo:val})]}).catch(()=>{});
+    }catch(error){toast('⚠️ 비고를 저장하지 못했습니다. 저장 대기를 확인해 주세요.');render();return;}
     b.memo = val;
-    saveStatusToGAS(statusKey(b), undefined, {memo: val});
     render();
   }
-  input.addEventListener('blur', save);
-  input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); if(e.key==='Escape'){ render(); } });
+  CoconaraUI.bindInlineEditor(input,{save,cancel:render});
 }
 
 function buildTable(list, mode='wait'){
-  if(!list.length) return `<div class="empty${mode==='new'?' empty-sm':''}">${mode==='new'?'신규 예약 없음':mode==='done'?'완료 없음':'대기 예약 없음'}</div>`;
+  if(!list.length && mode!=='wait') return `<div class="empty${mode==='new'?' empty-sm':''}">${mode==='new'?'신규 예약 없음':mode==='done'?'완료 없음':'대기 예약 없음'}</div>`;
   const editable = mode!=='done';
   const hdr = mode==='new'
     ? '<th>대기</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>금액</th><th>메모</th>'
@@ -1141,9 +1153,9 @@ function buildTable(list, mode='wait'){
 
   function rowHtml(b){
     const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
-    const memoVal = (b.memo||'').replace(/"/g,'&quot;');
+    const memoVal = escapeHtml(b.memo||'');
     return `
-    <tr class="${b.done?'done':''}"${mode==='wait'?` draggable="true" data-id="${b.id}" data-time="${b.time}" ondragstart="dragStart(event,${b.id})" ondragover="dragOver(event)" ondrop="dragDrop(event,${b.id})" ondragend="dragEnd(event)"`:''}>
+    <tr class="${b.done?'done':''}"${mode==='wait'?` draggable="true" data-id="${b.id}" data-time="${escapeHtml(b.time)}" ondragstart="dragStart(event,${b.id})" ondragover="dragOver(event)" ondrop="dragDrop(event,${b.id})" ondragend="dragEnd(event)"`:''}>
       ${mode==='wait'?`<td onclick="event.stopPropagation()" style="text-align:center"><input type="checkbox" class="bulk-chk" data-id="${b.id}" ${bulkSelected.has(b.id)?'checked':''} onchange="toggleBulkSel(${b.id},this.checked)"></td>`:''}
       <td onclick="event.stopPropagation()" style="text-align:center">
         ${mode==='new'
@@ -1153,11 +1165,11 @@ function buildTable(list, mode='wait'){
           : `<button class="act-icon ok" onclick="markDone(${b.id})" title="완료처리">✓</button>`
         }
       </td>
-      <td class="td-time" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'time',this)`:''}">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${b.origTime}</span> → ${b.time}`:b.time}</td>
-      <td class="td-name" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'name',this)`:''}">${b.name}${b.isNew&&!b.movedToWait?'<span class="new-bd">NEW</span>':''}</td>
+      <td class="td-time" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'time',this)`:''}">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${escapeHtml(b.origTime)}</span> → ${escapeHtml(b.time)}`:escapeHtml(b.time)}</td>
+      <td class="td-name" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'name',this)`:''}">${escapeHtml(b.name)}${b.isNew&&!b.movedToWait?'<span class="new-bd">NEW</span>':''}</td>
       <td ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'vehicles',this)`:''}" style="${editable?'cursor:text':''}"><div class="vehicles">${vHtml(b.vehicles)}</div></td>
-      <td class="td-site" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'site',this)`:''}">${si.main}</td>
-      <td class="td-phone" style="font-size:12px;font-weight:700;color:#999;${editable?'cursor:text':''}" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'phone',this)`:''}">${b.phone}</td>
+      <td class="td-site" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'site',this)`:''}">${escapeHtml(si.main)}</td>
+      <td class="td-phone" style="font-size:12px;font-weight:700;color:#999;${editable?'cursor:text':''}" ondblclick="${editable?`event.stopPropagation();editCell(${b.id},'phone',this)`:''}">${escapeHtml(b.phone)}</td>
       <td onclick="event.stopPropagation()">${smsCell(b)}</td>
       <td class="td-amount">${b.amount?Number(b.amount).toLocaleString():'—'}</td>
       <td class="td-memo" ondblclick="event.stopPropagation();editMemoCell(${b.id},this)" title="더블클릭해서 메모 입력">${memoVal||'<span class="memo-empty">+</span>'}</td>
@@ -1168,26 +1180,20 @@ function buildTable(list, mode='wait'){
   let rows='';
   if(mode==='wait'){
     // 시간대별로 그룹핑 + 각 그룹 헤더에 차량 합계 표시
-    const groups = {};
-    const order = [];
-    list.forEach(b=>{
-      if(!groups[b.time]){ groups[b.time]=[]; order.push(b.time); }
-      groups[b.time].push(b);
-    });
-    order.forEach(time=>{
-      const items = groups[time];
+    CoconaraUI.groupWaitRows(list).forEach(group=>{
+      const time=group.time,items=group.rows;
       const cnt = {pa:0,o:0,ko:0};
       items.forEach(b=>b.vehicles.forEach(v=>{
         if(v.code.startsWith('파')) cnt.pa+=v.qty;
         else if(v.code.startsWith('오')) cnt.o+=v.qty;
         else if(v.code.startsWith('코')) cnt.ko+=v.qty;
       }));
-      rows += `<tr class="time-group-hdr" data-time="${time}" ondragover="dragOver(event)" ondrop="dragDropToEmpty(event,'${time}')">
+      rows += `<tr class="time-group-hdr" data-time="${time}" data-empty="${items.length===0}" ${group.fixed?`ondragover="dragOver(event)" ondrop="dragDropToEmpty(event,'${time}')"`:''}>
         <td colspan="${colCount}">
           <span class="tgh-time">${time}</span>
-          <span class="tgh-veh tgh-pa">파${cnt.pa||0}</span>
-          <span class="tgh-veh tgh-o">오${cnt.o||0}</span>
-          <span class="tgh-veh tgh-ko">코${cnt.ko||0}</span>
+          <span class="tgh-veh tgh-pa">파${escapeHtml(cnt.pa||0)}</span>
+          <span class="tgh-veh tgh-o">오${escapeHtml(cnt.o||0)}</span>
+          <span class="tgh-veh tgh-ko">코${escapeHtml(cnt.ko||0)}</span>
         </td>
       </tr>`;
       items.forEach(b=>{ rows+=rowHtml(b); });
@@ -1213,16 +1219,9 @@ function render(){
 function renderNow(){
   const all=[...bookings,...newBookings];
   let newList=newBookings.filter(b=>b.isNew&&!b.done&&!b.movedToWait);
-  const timeOrder=['9시','10시','11시','12시','1시','2시','3시','4시','5시','6시','7시','8시'];
-  let waitList=all.filter(b=>!b.done&&(!b.isNew||b.movedToWait))
-    .sort((a,b)=>{
-      // 드래그로 직접 지정한 순서가 있으면 그것을 우선
-      const ci=waitCustomOrder.indexOf(a.id), cj=waitCustomOrder.indexOf(b.id);
-      if(ci!==-1 && cj!==-1) return ci-cj;
-      const ai=timeOrder.indexOf(a.time), bi=timeOrder.indexOf(b.time);
-      return (ai===-1?99:ai)-(bi===-1?99:bi);
-    });
-  let doneList=doneOrder.map(id=>all.find(b=>b.id===id)).filter(Boolean);
+  let waitList=CoconaraUI.sortWaitRows(all.filter(b=>!b.done&&(!b.isNew||b.movedToWait)),waitCustomOrder);
+  const byId=new Map(all.map(b=>[b.id,b]));
+  let doneList=doneOrder.map(id=>byId.get(id)).filter(Boolean);
 
   // 검색 필터 (이름/연락처) - 전체 섹션에 공통 적용
   if(searchQuery.trim()){
@@ -1567,17 +1566,18 @@ function submitBooking(){
   const qty=parseInt(document.getElementById('f-qty').value)||1;
   if(!time||!name||!phone||!selVehicles.length){toast('⚠️ 모든 항목 입력해주세요');return;}
   const vehicles = selVehicles.map(c=>({code:c,qty}));
-  const newBooking = {id:nextId++,time,name,vehicles,site,totalQty:qty*selVehicles.length,phone,sms:false,sentSMS:{},memo:'',done:false};
-  bookings.push(newBooking);
+  const newBooking = {id:nextId,time,name,vehicles,site,totalQty:qty*selVehicles.length,phone,sms:false,sentSMS:{},memo:'',done:false};
+  const key=`${time}|${name}|${phone}`;
+  const vehiclesStr = vehicles.map(v=>v.code+(v.qty>1?v.qty:'')).join(' ');
+  try{
+    enqueueOperation([{action:'addBookingDirect',time,name,vehiclesStr,site,qty,phone}],{entity:key,label:'예약 추가',effects:[{kind:'booking',keys:[key],row:newBooking,patch:{},create:true}]}).catch(()=>{});
+  }catch(error){toast('⚠️ 예약 추가 작업을 저장하지 못했습니다. 입력 내용을 유지합니다.');return;}
   selVehicles=[];
   document.querySelectorAll('.vsel-chip').forEach(c=>c.className='vsel-chip');
   ['f-time','f-name','f-phone'].forEach(i=>document.getElementById(i).value='');
   document.getElementById('f-qty').value='1';
   toggleAddForm();updateStats();render();
-  toast(`✅ ${name}님 추가됨!`);
-  // 구글시트(예약자관리)에 실제로 저장 — 저장 안 하면 새로고침 시 사라짐
-  const vehiclesStr = vehicles.map(v=>v.code+(v.qty>1?v.qty:'')).join(' ');
-  addBookingDirectToGAS(time, name, vehiclesStr, site, qty, phone);
+  toast(`✅ ${name}님 예약 추가 작업을 저장했어요`);
 }
 
 async function addBookingDirectToGAS(time, name, vehiclesStr, site, qty, phone){
@@ -1623,9 +1623,9 @@ async function loadClaims(){
     if(!claims.length){ el.style.display='none'; el.innerHTML=''; return; }
     el.innerHTML = claims.map(c=>`
       <div class="claim-row">
-        <span class="claim-type">⚠️ ${c.type}</span>
-        <span class="claim-info">${c.name ? `${c.time} ${c.name} ${c.phone}` : `주문번호 ${c.orderNo}`} <span style="opacity:0.7;font-size:11px">(${c.detectedAt} 감지)</span></span>
-        <button class="claim-ok" onclick="markClaimSeen('${c.type}','${c.orderNo}')">확인</button>
+        <span class="claim-type">⚠️ ${escapeHtml(c.type)}</span>
+        <span class="claim-info">${escapeHtml(c.name ? `${c.time} ${c.name} ${c.phone}` : `주문번호 ${c.orderNo}`)} <span style="opacity:0.7;font-size:11px">(${escapeHtml(c.detectedAt)} 감지)</span></span>
+        <button class="claim-ok" onclick="markClaimSeen(${escapeHtml(JSON.stringify(String(c.type)))},${escapeHtml(JSON.stringify(String(c.orderNo)))})">확인</button>
       </div>
     `).join('');
     el.style.display='flex';
@@ -1728,10 +1728,10 @@ function renderOpMemos(){
   el.innerHTML = opMemos.map(m=>`
     <div class="op-memo-card">
       <div class="op-memo-head">
-        <input class="op-memo-title" value="${(m.title||'').replace(/"/g,'&quot;')}" onchange="updateOpMemo(${m.id},'title',this.value)">
+        <input class="op-memo-title" value="${escapeHtml(m.title||'')}" onchange="updateOpMemo(${m.id},'title',this.value)">
         <button class="op-memo-del" onclick="deleteOpMemo(${m.id})">✕</button>
       </div>
-      <textarea class="op-memo-body" rows="3" placeholder="메모 내용..." onchange="updateOpMemo(${m.id},'body',this.value)">${m.body||''}</textarea>
+      <textarea class="op-memo-body" rows="3" placeholder="메모 내용..." onchange="updateOpMemo(${m.id},'body',this.value)">${escapeHtml(m.body||'')}</textarea>
     </div>
   `).join('');
 }
@@ -2040,14 +2040,14 @@ function renderSmsPage(){
       <div class="sms-card-header" onclick="toggleSms(${s.id})">
         <div class="sms-num-badge" style="border-color:${c.border};color:${c.color}">${s.id}</div>
         <div class="sms-card-name" onclick="event.stopPropagation()">
-          <input type="text" value="${s.name}" onchange="smsSettings[${i}].name=this.value;syncSmsToMain()" placeholder="세팅 이름">
+          <input type="text" value="${escapeHtml(s.name)}" onchange="smsSettings[${i}].name=this.value;syncSmsToMain()" placeholder="세팅 이름">
         </div>
         <button class="sms-copy-btn" onclick="event.stopPropagation();copySms(${i})">📋 복사</button>
         <span class="toggle-arrow${isOpen?' open':''}" id="sms-arrow-${s.id}">▼</span>
       </div>
       <div class="sms-card-body-wrap${isOpen?' open':''}" id="sms-wrap-${s.id}">
         <div class="sms-card-body">
-          <textarea id="sms-body-${s.id}" rows="6" oninput="smsSettings[${i}].body=this.value;updateCharCount(${s.id})">${s.body}</textarea>
+          <textarea id="sms-body-${s.id}" rows="6" oninput="smsSettings[${i}].body=this.value;updateCharCount(${s.id})">${escapeHtml(s.body)}</textarea>
         </div>
         <div class="sms-card-footer">
           <span class="sms-char-count" id="sms-char-${s.id}">${charCount}자</span>
@@ -2056,7 +2056,7 @@ function renderSmsPage(){
       </div>
     </div>`;
   }).join('');
-  document.getElementById('sms-cards').innerHTML = cards;
+  setHtml(document.getElementById('sms-cards'),cards);
   renderMemos();
 }
 
@@ -2084,11 +2084,19 @@ function saveSms(idx){
 
 // ── 문자내용 GAS 연동 ──
 let smsConfigLoaded = false;
+let _smsConfigRequest=null;
+let _smsEditRevision=0;
+document.getElementById('page-sms').addEventListener('input',()=>{_smsEditRevision++;},true);
 
-async function loadSmsConfigFromGAS(){
+function loadSmsConfigFromGAS(){
+  if(_smsConfigRequest)return _smsConfigRequest;
+  const revision=_smsEditRevision;
+  const source=GAS_URL;
+  _smsConfigRequest=(async()=>{
   try{
     const data = await gasGet('getSmsConfig', {}, {priority:3});
     if(data.error) throw new Error(data.error);
+    if(source!==GAS_URL || revision!==_smsEditRevision)return;
     if(data.settings && data.settings.length){
       data.settings.forEach(s=>{
         const target = smsSettings.find(x=>x.id===s.id);
@@ -2109,9 +2117,12 @@ async function loadSmsConfigFromGAS(){
   }catch(e){
     console.warn('문자내용 GAS 로드 실패, 기본값 사용:', e.message);
   } finally {
-    smsConfigLoaded = true;
-    renderSmsPage();
+    smsConfigLoaded = source===GAS_URL;
+    if(source===GAS_URL && revision===_smsEditRevision)renderSmsPage();
+    _smsConfigRequest=null;
   }
+  })();
+  return _smsConfigRequest;
 }
 
 async function saveSmsConfigToGAS(){
@@ -2161,14 +2172,14 @@ function renderMemos(){
     const isOpen = memoOpen[m.id];
     return `<div class="memo-card" id="memo-${m.id}">
       <div class="memo-card-header" onclick="toggleMemo(${m.id})">
-        <input class="memo-title-input" type="text" value="${m.title}" placeholder="제목"
+        <input class="memo-title-input" type="text" value="${escapeHtml(m.title)}" placeholder="제목"
           onclick="event.stopPropagation()"
           onchange="updateMemo(${m.id},'title',this.value)">
         <button class="memo-del-btn" onclick="event.stopPropagation();deleteMemo(${m.id})">삭제</button>
         <span class="toggle-arrow${isOpen?' open':''}" id="memo-arrow-${m.id}">▼</span>
       </div>
       <div class="memo-card-body${isOpen?' open':''}" id="memo-body-${m.id}">
-        <textarea id="memo-text-${m.id}" rows="4" placeholder="내용을 입력하세요...">${m.body}</textarea>
+        <textarea id="memo-text-${m.id}" rows="4" placeholder="내용을 입력하세요...">${escapeHtml(m.body)}</textarea>
         <div class="memo-card-footer">
           <button class="sms-save-btn" onclick="saveMemoNow(${m.id})">저장</button>
         </div>
@@ -2215,12 +2226,14 @@ function addWalkinInline(){
     toast('이미 추가된 연락처예요'); return;
   }
   const time = nowTime();
-  walkinList.push({id:walkinNextId++, phone, time, sentSms:{}, done:false});
+  const key='walkin|'+phone+'|'+time;
+  try{
+    enqueueOperation([{action:'setStatus',key,status:'wait'}],{entity:key,label:'현장손님 추가',effects:[{kind:'walkin',key,patch:{done:false,sentSms:{}}}]}).catch(()=>{});
+  }catch(error){toast('⚠️ 현장손님 추가 작업을 저장하지 못했습니다. 연락처를 유지합니다.');return;}
   el.value='';
   renderWalkinTbl();
   renderDoneTbl();
-  toast(`✅ ${phone} 추가됨!`);
-  saveStatusToGAS('walkin|'+phone+'|'+time, 'wait');
+  toast('✅ 현장손님 추가 작업을 저장했어요');
 }
 
 function nowTime(){
@@ -2247,13 +2260,13 @@ function markWalkinDone(id){
   if(!coreWritable()) return;
   const w = walkinList.find(x=>x.id===id);
   if(!w) return;
-  w.done = !w.done;
-  if(w.done){ walkinDoneOrder.push(id); }
-  else { walkinDoneOrder = walkinDoneOrder.filter(x=>x!==id); }
+  const key='walkin|'+w.phone+'|'+w.time,done=!w.done;
+  try{
+    enqueueOperation([{action:'setStatus',key,status:done?'done':'wait'}],{entity:key,label:done?'현장손님 완료':'현장손님 대기로 복귀',effects:[{kind:'walkin',key,patch:{done}}]}).catch(()=>{});
+  }catch(error){toast('⚠️ 처리 작업을 저장하지 못했습니다. 저장 대기를 확인해 주세요.');return;}
   renderWalkinTbl();
   renderDoneTbl();
-  toast(w.done?'✅ 완료처리':'↩️ 되돌렸어요');
-  saveStatusToGAS('walkin|'+w.phone+'|'+w.time, w.done ? 'done' : 'wait');
+  toast(done?'✅ 완료 처리 작업을 저장했어요':'↩️ 복귀 작업을 저장했어요');
 }
 
 // ── 검색 ──
@@ -2349,14 +2362,7 @@ function clearDragIndicators(){
 }
 function getCurrentWaitOrder(){
   const all=[...bookings,...newBookings];
-  const timeOrder=['9시','10시','11시','12시','1시','2시','3시','4시','5시','6시','7시','8시'];
-  return all.filter(b=>!b.done&&(!b.isNew||b.movedToWait))
-    .sort((a,b)=>{
-      const ci=waitCustomOrder.indexOf(a.id), cj=waitCustomOrder.indexOf(b.id);
-      if(ci!==-1 && cj!==-1) return ci-cj;
-      const ai=timeOrder.indexOf(a.time), bi=timeOrder.indexOf(b.time);
-      return (ai===-1?99:ai)-(bi===-1?99:bi);
-    });
+  return CoconaraUI.sortWaitRows(all.filter(b=>!b.done&&(!b.isNew||b.movedToWait)),waitCustomOrder);
 }
 // 시간대가 바뀌는 드래그면 고객의 시간 자체를 변경 + 시트/처리상태에도 반영
 function changeTimeByDrag(src, newTime){
@@ -2448,16 +2454,16 @@ function renderWalkinTbl(){
     const btns = SMS.map((s,i)=>{
       const c=colors[i]||colors[0];
       const sent=!!(w.sentSms&&w.sentSms[s.label]);
-      return `<span class="sms-num" style="width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid ${c.b};color:${sent?'#fff':c.c};background:${sent?c.b:'#fff'};font-size:11px;font-weight:800;cursor:pointer;margin-right:2px" onclick="sendWalkinSmsRow(${w.id},'${s.id}')" title="${s.title}">${s.label}</span>`;
+      return `<span class="sms-num" style="width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid ${c.b};color:${sent?'#fff':c.c};background:${sent?c.b:'#fff'};font-size:11px;font-weight:800;cursor:pointer;margin-right:2px" onclick="sendWalkinSmsRow(${w.id},'${s.id}')" title="${escapeHtml(s.title)}">${s.label}</span>`;
     }).join('');
     return `<tr class="walkin-row">
       <td onclick="event.stopPropagation()" style="text-align:center">
         <button class="act-icon ok" onclick="markWalkinDone(${w.id})" title="완료처리">✓</button>
       </td>
-      <td class="td-time">${w.time}</td>
+      <td class="td-time">${escapeHtml(w.time)}</td>
       <td class="td-name" style="color:#E87700;font-weight:900">현장</td>
       <td>—</td><td>—</td>
-      <td class="td-phone">${w.phone}</td>
+      <td class="td-phone">${escapeHtml(w.phone)}</td>
       <td onclick="event.stopPropagation()"><div style="display:flex;gap:0;flex-wrap:nowrap;align-items:center">${btns}</div></td>
     </tr>`;
   }).join('');
@@ -2494,16 +2500,16 @@ function renderDoneTbl(filteredList){
     const btns = SMS.map((s,i)=>{
       const c=walkinSmsColors[i]||walkinSmsColors[0];
       const sent=!!(w.sentSms&&w.sentSms[s.label]);
-      return `<span class="sms-num" style="width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid ${c.b};color:${sent?'#fff':c.c};background:${sent?c.b:'#fff'};font-size:11px;font-weight:800;cursor:pointer;margin-right:2px" onclick="sendWalkinSmsRow(${w.id},'${s.id}')" title="${s.title}">${s.label}</span>`;
+      return `<span class="sms-num" style="width:20px;height:20px;display:inline-flex;align-items:center;justify-content:center;border-radius:4px;border:1.5px solid ${c.b};color:${sent?'#fff':c.c};background:${sent?c.b:'#fff'};font-size:11px;font-weight:800;cursor:pointer;margin-right:2px" onclick="sendWalkinSmsRow(${w.id},'${s.id}')" title="${escapeHtml(s.title)}">${s.label}</span>`;
     }).join('');
     return `<tr class="done walkin-row">
       <td onclick="event.stopPropagation()" style="text-align:center">
         <button class="act-icon undo" onclick="markWalkinDone(${w.id})" title="되돌리기">↩</button>
       </td>
-      <td class="td-time">${w.time}</td>
+      <td class="td-time">${escapeHtml(w.time)}</td>
       <td class="td-name" style="color:#E87700;font-weight:900">현장</td>
       <td>—</td><td>—</td>
-      <td class="td-phone">${w.phone}</td>
+      <td class="td-phone">${escapeHtml(w.phone)}</td>
       <td onclick="event.stopPropagation()"><div style="display:flex;gap:0;flex-wrap:nowrap;align-items:center">${btns}</div></td>
       <td>—</td>
       <td>—</td>
@@ -2515,16 +2521,16 @@ function renderDoneTbl(filteredList){
   const thead = `<thead><tr><th>복귀</th><th>시간</th><th>이름</th><th>차량</th><th>채널</th><th>연락처</th><th>문자</th><th>금액</th><th>메모</th><th>삭제</th></tr></thead>`;
   const resvRows = resvDone.map(b=>{
     const si=SITE_LABEL[b.site]||{main:b.site,sub:''};
-    const memoVal = (b.memo||'').replace(/"/g,'&quot;');
+    const memoVal = escapeHtml(b.memo||'');
     return `<tr class="done">
       <td onclick="event.stopPropagation()" style="text-align:center">
         <button class="act-icon undo" onclick="markDone(${b.id})" title="되돌리기">↩</button>
       </td>
-      <td class="td-time">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${b.origTime}</span> → ${b.time}`:b.time}</td>
-      <td class="td-name">${b.name}</td>
+      <td class="td-time">${b.origTime&&b.origTime!==b.time?`<span class="time-orig">${escapeHtml(b.origTime)}</span> → ${escapeHtml(b.time)}`:escapeHtml(b.time)}</td>
+      <td class="td-name">${escapeHtml(b.name)}</td>
       <td><div class="vehicles">${vHtml(b.vehicles)}</div></td>
-      <td class="td-site">${si.main}</td>
-      <td class="td-phone" style="font-size:12px;font-weight:700;color:#999">${b.phone}</td>
+      <td class="td-site">${escapeHtml(si.main)}</td>
+      <td class="td-phone" style="font-size:12px;font-weight:700;color:#999">${escapeHtml(b.phone)}</td>
       <td onclick="event.stopPropagation()">${smsCell(b)}</td>
       <td class="td-amount">${b.amount?Number(b.amount).toLocaleString():'—'}</td>
       <td class="td-memo" ondblclick="event.stopPropagation();editMemoCell(${b.id},this)" title="더블클릭해서 메모 입력">${memoVal||'<span class="memo-empty">+</span>'}</td>
@@ -2550,12 +2556,17 @@ function deleteWalkinFromDone(id){
 }
 
 function switchPage(name, el){
+  const target=document.getElementById('page-'+name);
+  if(!target || target.classList.contains('on'))return;
   document.querySelectorAll('.page-tab').forEach(t=>t.classList.remove('on'));
   document.querySelectorAll('.page-content').forEach(t=>t.classList.remove('on'));
   el.classList.add('on');
-  document.getElementById('page-'+name).classList.add('on');
-  if(name==='stats') loadStats();
-  if(name==='sms'){ if(!smsConfigLoaded) loadSmsConfigFromGAS(); else renderSmsPage(); }
+  target.classList.add('on');
+  if(name==='stats') loadStats({ifStale:true});
+  if(name==='sms'){
+    if(!document.getElementById('sms-cards').children.length)renderSmsPage();
+    if(!smsConfigLoaded)loadSmsConfigFromGAS();
+  }
   if(name==='config') cfgOpen();
 }
 
@@ -2665,19 +2676,36 @@ function cfgClearLocal(){
 // (선언은 파일 상단으로 이동함)
 
 let statsData=[];
+let _statsRequest=null,_statsLoadedAt=0,_statsSource='';
 
-async function loadStats(){
-  document.getElementById('stats-table').innerHTML='<div style="text-align:center;padding:20px;color:#bbb;font-size:12px">구글시트 연동 중...</div>';
+function loadStats(options={}){
+  if(_statsRequest)return _statsRequest;
+  if(options.ifStale && _statsSource===GAS_URL && _statsLoadedAt && Date.now()-_statsLoadedAt<60000)return Promise.resolve(true);
+  const source=GAS_URL;
+  if(_statsSource && _statsSource!==source)statsData=[];
+  if(!statsData.length)setHtml(document.getElementById('stats-table'),'<div class="empty">차량통계를 확인하고 있습니다. 다른 탭은 계속 사용할 수 있습니다.</div>');
+  _statsRequest=(async()=>{
   try{
     const data = await gasGet('getStats', {}, {priority:3});
     if(!data || data.error) throw new Error((data&&data.error)||'응답 없음');
-    statsData = data.stats || [];
+    if(source!==GAS_URL)return false;
+    if(!Array.isArray(data.stats))throw new Error('통계 응답 형식이 올바르지 않습니다');
+    statsData = data.stats;
+    _statsLoadedAt=Date.now();_statsSource=source;
     renderStats();
+    if(!statsData.length)setHtml(document.getElementById('stats-table'),'<div class="empty">등록된 차량통계가 없습니다.</div>');
     document.getElementById('sync-info').textContent=`마지막 업데이트: ${new Date().toLocaleTimeString('ko-KR')}`;
+    return true;
   }catch(e){
-    useSampleStats();
-    document.getElementById('sync-info').textContent='⚠️ 시트 연결 실패 — 샘플 표시 (' + e.message + ')';
+    if(source!==GAS_URL)return false;
+    if(!statsData.length)setHtml(document.getElementById('stats-table'),'<div class="empty">차량통계를 불러오지 못했습니다. 시트 연동 버튼으로 다시 확인할 수 있습니다.</div>');
+    document.getElementById('sync-info').textContent=statsData.length?'이전 차량통계 표시 중 · 갱신을 기다리고 있습니다':'차량통계 확인 지연';
+    return false;
+  }finally{
+    _statsRequest=null;
   }
+  })();
+  return _statsRequest;
 }
 
 function useSampleStats(){
@@ -2723,7 +2751,7 @@ function renderStats(){
     else if(isMid) bg = 'background:#FFF3B0';
     const pColor = isHi?'#CC0000':isMid?'#996600':'#aaa';
     return `<td style="${bg};padding:4px 8px">
-      <span class="${colorCls}">${v}</span>
+      <span class="${colorCls}">${escapeHtml(v)}</span>
       <span style="font-size:9px;font-weight:700;color:${pColor};margin-left:3px">${p}%</span>
       ${isHi?'<span class="warn-dot"></span>':''}
     </td>`;
@@ -2750,7 +2778,7 @@ function renderStats(){
     else if(isSat)   dayBadge=`<span class="day-badge day-sat">토</span>`;
     else if(isSun)   dayBadge=`<span class="day-badge day-sun">일</span>`;
     return `<tr class="${isT?'stats-table-today':''}${isSat?' row-sat':''}${isSun?' row-sun':''}${holiday?' row-holiday':''}">
-      <td>${short}(${dow})${dayBadge}${isT?'<span class="today-badge">오늘</span>':''}${rowWarn?'<span class="warn-badge">⚠️</span>':''}</td>
+      <td>${escapeHtml(short)}(${escapeHtml(dow)})${dayBadge}${isT?'<span class="today-badge">오늘</span>':''}${rowWarn?'<span class="warn-badge">⚠️</span>':''}</td>
       ${cellHtml(r.pa,capPa,'td-pa')}
       ${cellHtml(r.o, capO, 'td-o')}
       ${cellHtml(r.ko,capKo,'td-ko')}
@@ -2767,10 +2795,9 @@ function renderStats(){
       <tbody>${rows}</tbody>
     </table>`;
 }
-Promise.resolve().then(async()=>{
-  setDate();calcFleet();updateStats();render();corePaint();
-  await loadBookingsFromGAS({quiet:true});
-});
+
 </script>
+<script src="reservation-outbox.js?v=2026.09.13.1"></script>
+<script src="reservation-runtime.js?v=2026.09.13.1"></script>
 </body>
 </html>
