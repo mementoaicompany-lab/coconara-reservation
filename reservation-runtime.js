@@ -1,6 +1,6 @@
 'use strict';
 // Shared by the website and the packaged desktop view. No credentials live here.
-var OPS={outbox:null,verified:false,raw:null,storageError:'',started:false,scope:'',paintScheduled:false,claims:[],cacheTimer:null,modelDay:'',modelSource:'',tasks:[],smsStates:new Map(),diagnostics:{},base:null,needsRebase:false};
+var OPS={outbox:null,verified:false,raw:null,storageError:'',started:false,scope:'',paintScheduled:false,claims:[],cacheTimer:null,modelDay:'',modelSource:'',tasks:[],smsStates:new Map(),diagnostics:{},base:null,needsRebase:false,identityReady:false,verification:null,verifyTimer:null,readback:null};
 const cloneOperation=value=>JSON.parse(JSON.stringify(value));
 const operationScope=()=>GAS_URL+'|sheet='+String(CFG.sheetId||'');
 const operationKey=b=>`${b.time}|${b.name}|${b.phone}`;
@@ -19,6 +19,24 @@ function indexOperationTasks(tasks){
 function operationError(message){const error=new Error(message);error.code='OPERATION_UNCERTAIN';return error;}
 function isPendingOperation(task){return task.day===localDay() && !['cancelled'].includes(task.state||task.status);}
 function operationState(task){return task.state||task.status;}
+function operationIdentityMap(tasks=operationTasks()){
+  const parent=new Map();
+  const root=key=>{if(!parent.has(key))parent.set(key,key);while(parent.get(key)!==key)key=parent.get(key);return key;};
+  for(const task of tasks){
+    if(task.day!==localDay()||(operationState(task)==='cancelled'&&task.cursor===0))continue;
+    // List order contains EVERY customer's key. It is never customer lineage.
+    for(const effect of task.effects||[])if(effect.kind==='booking'&&effect.keys?.length){
+      const first=root(effect.keys[0]);for(const key of effect.keys)parent.set(root(key),first);
+    }
+  }
+  return key=>parent.has(key)?root(key):key;
+}
+function taskTarget(task){
+  const effect=(task.effects||[]).find(e=>['booking','walkin','walkin-delete','sms'].includes(e.kind));
+  const first=task.steps[0];
+  if(first.key==='__order__wait'||task.effects?.some(e=>e.kind==='order'))return '__order__wait';
+  return effect?.keys?.[0]||effect?.key||first.key||task.entity;
+}
 function findOperationBooking(keys){return [...bookings,...newBookings].find(b=>keys.includes(operationKey(b)));}
 function findOperationWalkin(key){return walkinList.find(w=>`walkin|${w.phone}|${w.time}`===key);}
 function bookingEffect(key,patch,options={}){
@@ -43,24 +61,28 @@ function effectsForBody(body){
   return [];
 }
 function applyOperationEffects(){
+  // Always project from the last server base. Applying A→B→C repeatedly to an
+  // already projected C used to create an extra A/B row during queue changes.
+  if(OPS.base){const base=cloneOperation(OPS.base);({bookings,newBookings,walkinList,doneOrder,walkinDoneOrder,waitCustomOrder}=base);}
   const tasks=operationTasks().filter(isPendingOperation);
+  const identity=operationIdentityMap(tasks);
   const aliases=new Map(),entities=new Map();
   for(const task of tasks){
-    const keys=aliases.get(task.entity)||new Set();
+    const entity=identity(taskTarget(task)),keys=aliases.get(entity)||new Set();
     for(const e of task.effects||[])if(e.kind==='booking')for(const key of e.keys||[])keys.add(key);
-    aliases.set(task.entity,keys);
+    aliases.set(entity,keys);
   }
   for(const [entity,keys] of aliases)entities.set(entity,findOperationBooking([...keys]));
   for(const b of [...bookings,...newBookings]){b.sending={};b.operationState='';}
   for(const w of walkinList){w.sending={};w.operationState='';}
   for(const task of tasks){
-    const state=operationState(task);
+    const state=operationState(task),entity=identity(taskTarget(task));
     for(const effect of task.effects||[]){
       if(effect.kind==='booking'){
-        let b=entities.get(task.entity)||findOperationBooking(effect.keys);
+        let b=entities.get(entity)||findOperationBooking(effect.keys);
         if(!b && effect.row){b={...cloneOperation(effect.row),id:nextId++};(b.isNew?newBookings:bookings).push(b);}
         if(!b)continue;
-        entities.set(task.entity,b);
+        entities.set(entity,b);
         if(effect.remove){bookings=bookings.filter(x=>x!==b);newBookings=newBookings.filter(x=>x!==b);continue;}
         const sent={...(b.sentSMS||{}),...(effect.patch?.sentSMS||{})};Object.assign(b,cloneOperation(effect.patch||{}));b.sentSMS=sent;
         if(state!=='confirmed')b.operationState=state;
@@ -71,7 +93,7 @@ function applyOperationEffects(){
         if(state!=='confirmed')w.operationState=state;
       }else if(effect.kind==='walkin-delete')walkinList=walkinList.filter(w=>`walkin|${w.phone}|${w.time}`!==effect.key);
       else if(effect.kind==='sms'){
-        const b=effect.walkin?findOperationWalkin(effect.key):(entities.get(task.entity)||findOperationBooking(effect.keys));
+        const b=effect.walkin?findOperationWalkin(effect.key):(entities.get(entity)||findOperationBooking(effect.keys));
         if(!b)continue;
         const completed=state==='confirmed'||Number(task.nextStep||task.cursor||0)>0;
         if(completed){const prop=effect.walkin?'sentSms':'sentSMS';b[prop]={...(b[prop]||{}),[effect.label]:true};}
@@ -134,7 +156,7 @@ function restoreOperationCache(){
     walkinNextId=Math.max(9000,cached.walkinNextId||0,...walkinList.map(w=>w.id+1));
     opMemos=cached.opMemos||[];opMemoNextId=cached.opMemoNextId||1;
     if(cached.base&&[cached.base.bookings,cached.base.newBookings,cached.base.walkinList,cached.base.doneOrder,cached.base.walkinDoneOrder,cached.base.waitCustomOrder].every(Array.isArray)&&[...cached.base.bookings,...cached.base.newBookings].every(validBooking))OPS.base=cached.base;else rememberCoreBase();
-    CORE.lastSuccess=cached.lastSuccess||0;CORE.lastDate=localDay();CORE.error='마지막 저장 목록 사용 중';
+    CORE.lastSuccess=cached.lastSuccess||0;CORE.lastDate=localDay();CORE.error='마지막 저장 목록 사용 중';OPS.verified=!!cached.lastSuccess;
   }catch(error){OPS.storageError='저장한 예약 목록을 읽지 못했습니다. 서버 목록을 다시 확인합니다.';}
 }
 function operationsChanged(){
@@ -148,20 +170,33 @@ function ensureOperationContext(){
   CORE.lastSuccess=0;CORE.lastDate='';CORE.generation++;CORE.error='새 날짜·연결의 예약을 확인합니다';
   bookings=[];newBookings=[];walkinList=[];doneOrder=[];walkinDoneOrder=[];waitCustomOrder=[];bulkSelected.clear();opMemos=[];
   if(sourceChanged&&OPS.outbox){OPS.outbox.dispose();createOperationOutbox();}
-  restoreOperationCache();if(!OPS.base)rememberCoreBase();render();renderWalkinTbl();paintClaims();
+  restoreOperationCache();restoreSupportingCache();if(!OPS.base)rememberCoreBase();render();renderWalkinTbl();paintClaims();
 }
 function createOperationOutbox(){
   OPS.scope=operationScope();
   const dispatchUrl=GAS_URL,scope=OPS.scope;
-  OPS.tasks=[];OPS.smsStates=new Map();
+  OPS.tasks=[];OPS.smsStates=new Map();OPS.identityReady=false;
   OPS.outbox=CoconaraOutbox.create({storage:localStorage,scope:OPS.scope,day:localDay,lock:navigator.locks,
-    canSend:()=>OPS.verified && scope===operationScope() && OPS.modelDay===localDay() && !CORE.error && !_settingsApplying && navigator.onLine!==false,
+    canSend:()=>OPS.identityReady && OPS.verified && scope===operationScope() && OPS.modelDay===localDay() && !_settingsApplying && navigator.onLine!==false,
+    verify:(body,task)=>verifyOperationStep(body,task,OPS.readback),
+    independentOfUncertain:(next,previous)=>previous.steps[previous.cursor]?.action==='sendSms' && next.steps.every(body=>body.action==='setStatus' && body.key===previous.steps.find(step=>step.action==='setStatus')?.key && !body.meta?.sentSms),
     send:async(body)=>{
       _writesPending++;_writeRevision++;netPaint();
-      try{return await fetchT(dispatchUrl,{method:'POST',body:JSON.stringify(body)},CFG.timeoutMs);}
-      finally{_writesPending--;_writeRevision++;_writeQuietUntil=Date.now()+500;netPaint();}
+      try{return await fetchT(dispatchUrl,{method:'POST',body:JSON.stringify(body)},CFG.timeoutMs,diagnostic=>{
+        if(diagnostic.phase==='complete'||diagnostic.code!=='OK'){
+          try{const key='coconara-operation-diagnostics',history=JSON.parse(localStorage.getItem(key)||'[]');
+            history.push({at:new Date().toISOString(),action:body.action,phase:diagnostic.phase,code:diagnostic.code,status:diagnostic.status,elapsedMs:diagnostic.elapsedMs});
+            localStorage.setItem(key,JSON.stringify(history.slice(-100)));
+          }catch(_){}
+        }
+      });}
+      finally{_writesPending--;_writeRevision++;_writeQuietUntil=Date.now()+500;netPaint();scheduleOperationVerification();}
     },onChange:(tasks,diagnostics)=>{if(OPS.scope!==scope)return;OPS.diagnostics=diagnostics||{};if(tasks)indexOperationTasks(tasks);operationsChanged();}});
   indexOperationTasks(OPS.outbox.list());
+  const identity=operationIdentityMap();
+  OPS.outbox.migrateEntities(task=>task.day===localDay()?identity(taskTarget(task)):task.entity).then(()=>{
+    if(OPS.scope!==scope)return;OPS.identityReady=true;OPS.outbox.flush();scheduleOperationVerification();
+  }).catch(()=>{OPS.storageError='기존 작업을 안전하게 정리하지 못했습니다. 원본 기록은 보존돼 있습니다.';paintOperationQueue();});
 }
 async function flushOperations(){if(OPS.outbox)await OPS.outbox.flush();}
 function enqueueOperation(steps,options={}){
@@ -170,8 +205,7 @@ function enqueueOperation(steps,options={}){
   if(!OPS.outbox||OPS.scope!==operationScope())throw operationError('연결 설정을 먼저 확인해 주세요.');
   const effects=options.effects||steps.flatMap(effectsForBody);
   const proposedEntity=options.entity||steps[0].key||steps[0].phone||steps[0].action;
-  const lineage=operationTasks().find(t=>t.day===localDay() && t.effects?.some(e=>e.keys?.includes(proposedEntity)));
-  const entity=lineage?.entity||proposedEntity;
+  const entity=operationIdentityMap()(proposedEntity);
   let entry;
   try{entry=OPS.outbox.enqueue(steps,{label:options.label||steps[0].action,entity,effects});}
   catch(error){OPS.storageError='작업을 이 컴퓨터에 저장하지 못했습니다. 저장 공간을 확인해 주세요.';paintOperationQueue();throw error;}
@@ -203,12 +237,23 @@ corePaint=function(){
 let _auxChain=Promise.resolve();const _auxReads=new Map();
 gasGet=function(action,params={},opt={}){
   const url=GAS_URL,query=new URLSearchParams({action,...params});
-  const run=()=>fetchT(`${url}?${query}`,{},READ_ACTIONS.includes(action)?opt.timeout:Math.min(Number(opt.timeout)||15000,15000),raw=>{
+  const native=window.coconaraReservation;
+  const timeout=READ_ACTIONS.includes(action)?Number(opt.timeout||CFG.timeoutMs):Math.min(Number(opt.timeout)||15000,15000);
+  const run=async()=>{
+    if(native?.read && (native.readActions||READ_ACTIONS).includes(action) && !Object.keys(params).length){
+      const result=await native.read({url,action,timeoutMs:timeout});
+      if(!result.ok)throw Object.assign(new Error(result.error||'시트 연결 오류'),{code:result.diagnostic?.code});
+      return result.data;
+    }
+    return fetchT(`${url}?${query}`,{},timeout,raw=>{
     opt.onDiagnostic?.(raw,raw.code!=='OK'?'failed':(raw.phase==='complete'?'success':'pending'),0);
-  });
-  if(READ_ACTIONS.includes(action))return run();
+    });
+  };
+  if(READ_ACTIONS.includes(action)||opt.fresh)return run();
   const key=url+'?'+query;if(_auxReads.has(key))return _auxReads.get(key);
-  const promise=_auxChain.then(run,run);_auxChain=promise.catch(()=>{});_auxReads.set(key,promise);
+  // Balance providers can be slow; their reads never occupy the memo/fleet lane.
+  const balance=['getSolapiBalance','getNaverAdBalance'].includes(action);
+  const promise=balance?run():_auxChain.then(run,run);if(!balance)_auxChain=promise.catch(()=>{});_auxReads.set(key,promise);
   promise.finally(()=>_auxReads.delete(key)).catch(()=>{});return promise;
 };
 const originalFetchCore=fetchCore;
@@ -234,13 +279,103 @@ applyCore=function(payload){
 };
 const originalLoadCore=loadBookingsFromGAS;
 loadBookingsFromGAS=function(options){
-  ensureOperationContext();
-  return originalLoadCore(options).then(ok=>{applyOperationEffects();render();renderWalkinTbl();if(ok){OPS.verified=true;saveOperationCache();reconcileOperations();flushOperations();}return ok;});
+  ensureOperationContext();const readAt=Date.now();
+  return originalLoadCore(options).then(async ok=>{applyOperationEffects();render();renderWalkinTbl();if(ok){OPS.verified=true;OPS.readback={...OPS.raw,scope:operationScope(),day:localDay(),readAt};saveOperationCache();await OPS.outbox.verifyPending();reconcileOperations();flushOperations();}return ok;});
 };
 canAutoRead=function(){
   const active=document.activeElement;
   return !document.hidden && !_settingsApplying && !_loadingCore && !_writesPending && Date.now()>=_writeQuietUntil && Date.now()-LAST_TOUCH>=1500 && !(active && active.id!=='search-input' && !active.readOnly && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
 };
+function containsOperationValue(actual,expected){
+  if(expected&&typeof expected==='object'&&!Array.isArray(expected))return !!actual&&Object.entries(expected).every(([key,value])=>containsOperationValue(actual[key],value));
+  return JSON.stringify(actual)===JSON.stringify(expected);
+}
+function verifyOperationStep(body,task,snapshot){
+  if(!snapshot||snapshot.scope!==operationScope()||snapshot.day!==task.day||snapshot.readAt<task.updatedAt)return false;
+  const state=snapshot.dataS;
+  const matches=(rows,time,name,phone)=>Array.isArray(rows)?rows.filter(r=>r.time===time&&r.name===name&&r.phone===phone):null;
+  if(body.action==='setStatus')return !!state && (body.status===undefined||state.statusMap?.[body.key]===body.status) && (body.meta===undefined||containsOperationValue(state.metaMap?.[body.key]||{},body.meta));
+  if(body.action==='deleteStatus')return !!state&&!Object.hasOwn(state.statusMap,body.key)&&!Object.hasOwn(state.metaMap||{},body.key);
+  if(body.action==='migrateStatusKey'){
+    // The cell edit precedes this stage. No old status/meta means there is
+    // nothing left to migrate; never infer success while the old key remains.
+    return !!state&&!Object.hasOwn(state.statusMap,body.oldKey)&&!Object.hasOwn(state.metaMap||{},body.oldKey);
+  }
+  if(body.action==='updateBookingCell'){
+    const rows=body.sheet==='new'?snapshot.dataN?.newBookings:snapshot.dataB?.bookings;
+    const keys={time:body.matchTime,name:body.matchName,phone:body.matchPhone};
+    if(Object.hasOwn(keys,body.field))keys[body.field]=body.value;
+    const found=matches(rows,keys.time,keys.name,keys.phone);if(found?.length!==1)return false;
+    const row=found[0],effect=task.effects?.find(e=>e.kind==='booking');
+    if(body.field==='vehicles')return !!effect?.patch?.vehicles&&containsOperationValue(row.vehicles,effect.patch.vehicles);
+    return String(row[body.field==='site'?'channel':body.field]??'')===String(body.value??'');
+  }
+  if(body.action==='moveNewToBookings'){
+    const moved=matches(snapshot.dataB?.bookings,body.time,body.name,body.phone),remaining=matches(snapshot.dataN?.newBookings,body.time,body.name,body.phone);
+    return moved?.length===1&&remaining?.length===0;
+  }
+  if(body.action==='deleteBookingRow'){
+    const found=matches(body.sheet==='new'?snapshot.dataN?.newBookings:snapshot.dataB?.bookings,body.matchTime,body.matchName,body.matchPhone);
+    return found?.length===0;
+  }
+  if(body.action==='setFleet'){
+    const fleet=snapshot.dataFleet?.fleet?.[body.vehicle];
+    return !!fleet&&['avail','remain'].every(key=>body[key]===undefined||Number(fleet[key])===Number(body[key]));
+  }
+  if(body.action==='markClaimSeen')return Array.isArray(snapshot.dataClaims?.claims)&&!snapshot.dataClaims.claims.some(c=>String(c.type)===String(body.type)&&String(c.orderNo)===String(body.orderNo));
+  if(body.action==='saveOpMemos'){
+    const normalize=items=>items.map(m=>({id:String(m.id),title:String(m.title||''),body:String(m.body||'')}));
+    return Array.isArray(snapshot.dataMemos?.opMemos)&&JSON.stringify(normalize(snapshot.dataMemos.opMemos))===JSON.stringify(normalize(body.memos||[]));
+  }
+  if(body.action==='saveSmsConfig'){
+    const data=snapshot.dataSms;if(!Array.isArray(data?.settings)||!Array.isArray(data?.memos))return false;
+    const settings=items=>items.map(m=>({id:Number(m.id),name:String(m.name||''),body:String(m.body||'')}));
+    const memos=items=>items.map(m=>({id:String(m.id),title:String(m.title||''),body:String(m.body||'')}));
+    return JSON.stringify(settings(data.settings))===JSON.stringify(settings(body.settings||[]))&&JSON.stringify(memos(data.memos))===JSON.stringify(memos(body.memos||[]));
+  }
+  // SMS, additions and externally consequential work need a server receipt.
+  // A local overlay, absent error, or an old sentSms marker is not that receipt.
+  return false;
+}
+function scheduleOperationVerification(){
+  if(OPS.verifyTimer||OPS.verification)return;
+  OPS.verifyTimer=setTimeout(()=>{OPS.verifyTimer=null;verifyOperations().catch(()=>{});},5000);
+}
+async function verifyOperations(){
+  if(OPS.verification)return OPS.verification;
+  const pending=operationTasks().filter(t=>t.day===localDay()&&operationState(t)==='uncertain');
+  if(!pending.length||navigator.onLine===false||_settingsApplying)return [];
+  const scope=operationScope(),day=localDay(),readAt=Date.now(),actions=new Set();
+  for(const task of pending){const body=task.steps[task.cursor];
+    if(['setStatus','deleteStatus','migrateStatusKey'].includes(body.action))actions.add('getStatus');
+    if(['updateBookingCell','deleteBookingRow'].includes(body.action))actions.add(body.sheet==='new'?'getNew':'getBookings');
+    if(body.action==='moveNewToBookings'){actions.add('getBookings');actions.add('getNew');}
+    const auxiliary={setFleet:'getFleet',markClaimSeen:'getClaims',saveOpMemos:'getOpMemos',saveSmsConfig:'getSmsConfig'}[body.action];
+    if(auxiliary)actions.add(auxiliary);
+  }
+  if(!actions.size)return [];
+  OPS.verification=(async()=>{
+    const snapshot={scope,day,readAt};
+    await Promise.allSettled([...actions].map(async action=>{
+      const data=await gasGet(action,{}, {timeout:20000,fresh:true});
+      if(action==='getStatus'&&isRecord(data.statusMap)&&isRecord(data.metaMap||{}))snapshot.dataS=data;
+      if(action==='getBookings'&&Array.isArray(data.bookings))snapshot.dataB=data;
+      if(action==='getNew'&&Array.isArray(data.newBookings))snapshot.dataN=data;
+      if(action==='getFleet'&&isRecord(data.fleet))snapshot.dataFleet=data;
+      if(action==='getClaims'&&Array.isArray(data.claims))snapshot.dataClaims=data;
+      if(action==='getOpMemos'&&Array.isArray(data.opMemos))snapshot.dataMemos=data;
+      if(action==='getSmsConfig'&&Array.isArray(data.settings)&&Array.isArray(data.memos))snapshot.dataSms=data;
+    }));
+    if(scope!==operationScope()||day!==localDay())return [];
+    OPS.readback=snapshot;
+    const result=await OPS.outbox.verifyPending();
+    if(result.length)scheduleCore(1000);
+    return result;
+  })().finally(()=>{OPS.verification=null;if(operationTasks().some(t=>t.day===localDay()&&operationState(t)==='uncertain')){
+    OPS.verifyTimer=setTimeout(()=>{OPS.verifyTimer=null;verifyOperations().catch(()=>{});},30000);
+  }});
+  return OPS.verification;
+}
 function reconcileOperations(){
   if(!OPS.raw||!OPS.outbox)return;
   const {dataB,dataN,dataS}=OPS.raw,rows=[...dataB.bookings,...dataN.newBookings];
@@ -324,7 +459,7 @@ loadFleet=async function(){
     if(scope!==operationScope()||revision!==_writeRevision)return;
     await retireAuxiliary('fleet',startedAt);if(scope!==operationScope()||revision!==_writeRevision)return;
     for(const vehicle of ['pa','o','ko'])for(const field of ['avail','remain'])document.getElementById(`fl-${vehicle}-${field==='remain'?'rem':field}`).value=data.fleet[vehicle][field];
-    CORE.fleetLoaded=true;delete CORE.auxiliary.fleet;applyOperationEffects();
+    CORE.fleetLoaded=true;delete CORE.auxiliary.fleet;applyOperationEffects();saveSupportingCache();
   }catch(error){CORE.auxiliary.fleet='차량 현황 조회 지연';}finally{_fleetBusy=false;corePaint();}
 };
 
@@ -350,7 +485,7 @@ markDone=function(id){
 };
 saveStatusToGAS=function(key,status,meta){
   const body={action:'setStatus',key};if(status!==undefined)body.status=status;if(meta!==undefined)body.meta=meta;
-  return gasPost(body,{label:'상태·비고 저장'}).catch(()=>({uncertain:true}));
+  return gasPost(body,{label:key==='__order__wait'?'대기 목록 순서 저장':'상태·비고 저장'}).catch(()=>({uncertain:true}));
 };
 
 changeTimeByDrag=function(b,time){
@@ -457,11 +592,40 @@ loadClaims=async function(){
 };
 markClaimSeen=function(type,orderNo){return enqueueOperation([{action:'markClaimSeen',type,orderNo}],{entity:`claim:${type}:${orderNo}`,label:'취소·반품 알림 확인',effects:[{kind:'claim',type,orderNo:String(orderNo)}]}).catch(()=>{});};
 let _balanceAt=0,_balancePromise=null;
-const originalLoadBalances=loadBalances;
+const balanceValues=new Map();
+function paintBalances(){
+  const el=document.getElementById('balance-badges');if(!el)return;
+  const fragment=document.createDocumentFragment();
+  for(const [key,value] of balanceValues){
+    const badge=document.createElement('span');badge.className='balance-badge';
+    const stale=!!value.stale;badge.textContent=`${key==='getSolapiBalance'?'솔라피':'네이버광고'} 잔액 ${value.amount.toLocaleString()}원${stale?' · 이전 조회':''}`;
+    badge.title=`마지막 확인 ${new Date(value.at).toLocaleString('ko-KR')}${stale?' · 현재 조회 지연':''}`;fragment.append(badge);
+  }
+  el.replaceChildren(fragment);
+}
 loadBalances=function(){
   if(_balancePromise)return _balancePromise;if(Date.now()-_balanceAt<300000)return Promise.resolve();
-  _balanceAt=Date.now();_balancePromise=originalLoadBalances().finally(()=>{_balancePromise=null;});return _balancePromise;
+  const scope=operationScope();_balanceAt=Date.now();
+  _balancePromise=Promise.allSettled(['getSolapiBalance','getNaverAdBalance'].map(async action=>{
+    try{const data=await gasGet(action),amount=Number(action==='getSolapiBalance'?data.total:data.bizmoney);if(!Number.isFinite(amount))throw invalidPayload();
+      if(scope!==operationScope())return;balanceValues.set(action,{amount:Math.floor(amount),at:Date.now(),stale:false});
+    }catch(_){if(scope!==operationScope())return;const old=balanceValues.get(action);if(old)old.stale=true;CORE.auxiliary.balance='잔액 조회 지연';}
+    paintBalances();saveSupportingCache();
+  })).finally(()=>{_balancePromise=null;});return _balancePromise;
 };
+function supportingCacheKey(){return operationCacheKey()+':support';}
+function saveSupportingCache(){
+  try{const fleet={};for(const v of ['pa','o','ko']){fleet[v]={};for(const f of ['avail','rem']){const text=document.getElementById(`fl-${v}-${f}`)?.value;if(text!==''&&Number.isFinite(Number(text)))fleet[v][f]=Number(text);}}
+    localStorage.setItem(supportingCacheKey(),JSON.stringify({balances:[...balanceValues],fleet}));
+  }catch(_){}
+}
+function restoreSupportingCache(){
+  balanceValues.clear();_balanceAt=0;
+  try{const cache=JSON.parse(localStorage.getItem(supportingCacheKey())||'null');if(!cache)return;
+    for(const [key,value] of cache.balances||[])if(['getSolapiBalance','getNaverAdBalance'].includes(key)&&Number.isFinite(value.amount)&&Number.isFinite(value.at))balanceValues.set(key,{...value,stale:true});
+    for(const v of ['pa','o','ko'])for(const f of ['avail','rem'])if(Number.isFinite(cache.fleet?.[v]?.[f])){const el=document.getElementById(`fl-${v}-${f}`);el.value=cache.fleet[v][f];el.title='마지막 저장 값 · 새 조회 후 갱신';}
+  }catch(_){}paintBalances();
+}
 
 function paintOperationQueue(){
   const button=document.getElementById('operations-toggle'),list=document.getElementById('operations-list');if(!button||!list)return;
@@ -475,15 +639,16 @@ function paintOperationQueue(){
     const row=document.createElement('div');row.className='operation-row';
     const label=document.createElement('strong');label.textContent=task.label||'저장 작업';
     const target=document.createElement('span');const effect=(task.effects||[]).find(e=>e.row||e.key||e.keys);const rowInfo=effect?.row;const parts=String(effect?.keys?.[0]||effect?.key||task.entity).split('|');
-    target.textContent=rowInfo?`${rowInfo.time} ${rowInfo.name} · ${String(rowInfo.phone).slice(-4)}`:parts[0]==='walkin'?`현장 ${parts[2]||''} · ${String(parts[1]).slice(-4)}`:parts.length===3?`${parts[0]} ${parts[1]} · ${parts[2].slice(-4)}`:String(task.entity).slice(0,65);
+    target.textContent=taskTarget(task)==='__order__wait'?'목록 표시 순서':rowInfo?`${rowInfo.time} ${rowInfo.name} · ${String(rowInfo.phone).slice(-4)}`:parts[0]==='walkin'?`현장 ${parts[2]||''} · ${String(parts[1]).slice(-4)}`:parts.length===3?`${parts[0]} ${parts[1]} · ${parts[2].slice(-4)}`:String(task.entity).slice(0,65);
     const status=document.createElement('span');status.textContent=task.day!==localDay()?'이전 날짜 작업 · 자동 전송 안 함':captions[operationState(task)]||'확인 필요';row.append(label,target,status);
     if(operationState(task)==='uncertain'){
-      const currentStep=task.steps[task.cursor||0];const ack=document.createElement('button');ack.textContent='이 단계 처리 확인';ack.onclick=()=>{
+      const currentStep=task.steps[task.cursor||0];const ack=document.createElement('button');ack.textContent=currentStep?.action==='sendSms'?'발송내역 확인 후 완료':'서버 반영 다시 확인';ack.onclick=()=>{
+        if(currentStep?.action!=='sendSms'){ack.disabled=true;verifyOperations().finally(()=>paintOperationQueue());return;}
         const actionName=currentStep?.action==='sendSms'?'문자 발송':currentStep?.action==='setStatus'?'처리 상태 저장':currentStep?.action==='moveNewToBookings'?'신규 예약 이전':task.label;
         if(confirm(`${target.textContent} · ${actionName}\n구글시트 또는 문자 발송내역에서 이 단계가 처리된 것을 확인했나요? 확인하면 남은 단계가 이어서 처리됩니다.`))OPS.outbox.resolve(task.id,'confirmed').catch(()=>toast('확인 내용을 저장하지 못했습니다.'));
       };row.append(ack);
     }
-    if(operationState(task)!=='sending'){
+    if(operationState(task)==='queued'&&task.cursor===0){
       const cancel=document.createElement('button');cancel.textContent=operationState(task)==='queued'&&task.cursor===0?'대기 취소':'기록 정리';cancel.onclick=()=>{
         if(confirm(operationState(task)==='queued'&&task.cursor===0?'아직 전송하지 않은 작업을 취소할까요?':'구글시트·문자 발송내역에서 처리 결과를 확인한 후 기록을 정리해 주세요. 이미 전달된 작업을 취소하는 기능은 아닙니다. 결과를 확인했나요?')){OPS.outbox.resolve(task.id,'cancelled').then(()=>loadBookingsFromGAS({quiet:true})).catch(()=>toast('대기 기록을 저장하지 못했습니다.'));}
       };row.append(cancel);
@@ -499,17 +664,18 @@ function installOperationUI(){
   const toggle=document.createElement('button');toggle.id='operations-toggle';toggle.type='button';toggle.textContent='저장 대기';toggle.setAttribute('aria-expanded','false');
   const panel=document.createElement('section');panel.id='operations-panel';panel.className='operations-panel';panel.hidden=true;
   const title=document.createElement('strong');title.textContent='이 화면에서 접수한 작업';
-  const help=document.createElement('p');help.textContent='대기 작업은 이 브라우저에 저장됩니다. 연결되면 순서대로 처리합니다. 결과가 불명확한 문자 등은 중복 전송하지 않고 확인을 기다립니다.';
+  const help=document.createElement('p');help.textContent='작업은 이 기기에 보관됩니다. 일반 저장은 서버 반영 여부를 자동 확인하며, 다른 고객의 업무는 계속 처리합니다. 문자 발송 결과만 불명확한 경우 발송내역 확인이 필요합니다.';
   const list=document.createElement('div');list.id='operations-list';panel.append(title,help,list);
   toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));paintOperationQueue();};
   const header=document.getElementById('sync-pill')?.parentElement||document.body;header.append(toggle);header.after(panel);
   const config=document.querySelector('#page-config .cfg-wrap');if(config){const p=document.createElement('p');p.textContent='마지막 전체 예약 조회: ';const time=document.createElement('span');time.id='operation-last-read';p.append(time);config.prepend(p);}
 }
 function startReservationRuntime(){
-  installOperationUI();OPS.started=true;OPS.modelDay=localDay();OPS.modelSource=operationScope();restoreOperationCache();if(!OPS.base)rememberCoreBase();createOperationOutbox();applyOperationEffects();setDate();render();renderWalkinTbl();renderOpMemos();corePaint();paintOperationQueue();
-  window.addEventListener('online',()=>{loadBookingsFromGAS({quiet:true});});
+  installOperationUI();OPS.started=true;OPS.modelDay=localDay();OPS.modelSource=operationScope();restoreOperationCache();restoreSupportingCache();if(!OPS.base)rememberCoreBase();createOperationOutbox();applyOperationEffects();setDate();render();renderWalkinTbl();renderOpMemos();corePaint();paintOperationQueue();
+  window.addEventListener('online',()=>{loadBookingsFromGAS({quiet:true});verifyOperations().catch(()=>{});flushOperations().catch(()=>{});});
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){operationsChanged();flushOperations();}});
   window.addEventListener('pagehide',saveOperationCache);
+  setInterval(()=>{if(navigator.onLine!==false&&operationTasks().some(t=>t.day===localDay()&&operationState(t)==='queued'))flushOperations().catch(()=>{});},30000);
   Promise.resolve().then(()=>loadBookingsFromGAS({quiet:true}));
 }
 startReservationRuntime();

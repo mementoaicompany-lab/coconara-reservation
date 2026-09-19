@@ -638,8 +638,8 @@ button:disabled{cursor:not-allowed}
 
 <div class="toast" id="toast"></div>
 
-<link rel="stylesheet" href="reservation-ui.css?v=2026.09.13.1">
-<script src="reservation-ui.js?v=2026.09.13.1"></script>
+<link rel="stylesheet" href="reservation-ui.css?v=20260919-312">
+<script src="reservation-ui.js?v=20260919-312"></script>
 <script>
 const escapeHtml=CoconaraUI.escapeHtml;
 // ===== Google Apps Script 웹앱 URL (구글시트 ↔ 홈페이지 연동) =====
@@ -1319,13 +1319,16 @@ function applyCore({dataB,dataN,dataS}){
       const np=b.name+'|'+digits(b.phone); prevByNP[np]=prevByNP[np]===undefined?b:null;
       const phone=digits(b.phone); prevByPhone[phone]=prevByPhone[phone]===undefined?b:null;
     });
-    const findPrev = row => prevMap[`${row.time}|${row.name}|${row.phone}`]
-      || prevByNP[row.name+'|'+digits(row.phone)]
+    const rawCounts=new Map();for(const row of [...dataB.bookings,...dataN.newBookings]){const np=row.name+'|'+digits(row.phone);rawCounts.set(np,(rawCounts.get(np)||0)+1);}
+    const usedPreviousIds=new Set();
+    const findPrev = row => {const np=row.name+'|'+digits(row.phone);const previous=prevMap[`${row.time}|${row.name}|${row.phone}`]
+      || (rawCounts.get(np)===1?prevByNP[np]:undefined)
       || (prevByPhone[digits(row.phone)] && prevByPhone[digits(row.phone)]._editedAt && Date.now()-prevByPhone[digits(row.phone)]._editedAt<60000 ? prevByPhone[digits(row.phone)] : undefined);
+      if(!previous||usedPreviousIds.has(previous.id))return undefined;usedPreviousIds.add(previous.id);return previous;};
 
     const nextBookings = dataB.bookings.map((row,i)=>{
       const prev = findPrev(row);
-      const keepLocal = prev && prev._editedAt && (Date.now() - prev._editedAt < 60000);
+      const keepLocal = !(typeof OPS!=='undefined'&&OPS?.started) && prev && prev._editedAt && (Date.now() - prev._editedAt < 60000);
       const effTime = keepLocal ? prev.time : row.time;
       const effName = keepLocal ? prev.name : row.name;
       const effPhone = keepLocal ? prev.phone : row.phone;
@@ -1352,7 +1355,7 @@ function applyCore({dataB,dataN,dataS}){
 
     const nextNewBookings = dataN.newBookings.filter(row=>!nextBookings.some(b=>statusKey(b)===`${row.time}|${row.name}|${row.phone}`)).map((row,i)=>{
       const prev = findPrev(row);
-      const keepLocal = prev && prev._editedAt && (Date.now() - prev._editedAt < 60000);
+      const keepLocal = !(typeof OPS!=='undefined'&&OPS?.started) && prev && prev._editedAt && (Date.now() - prev._editedAt < 60000);
       const effTime = keepLocal ? prev.time : row.time;
       const effName = keepLocal ? prev.name : row.name;
       const effPhone = keepLocal ? prev.phone : row.phone;
@@ -2797,7 +2800,7 @@ function renderStats(){
 }
 
 </script>
-<script src="reservation-outbox.js?v=2026.09.13.1"></script>
-<script src="reservation-runtime.js?v=2026.09.13.1"></script>
+<script src="reservation-outbox.js?v=20260919-312"></script>
+<script src="reservation-runtime.js?v=20260919-312"></script>
 </body>
 </html>

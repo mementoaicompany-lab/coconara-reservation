@@ -150,7 +150,7 @@
     }
     function eligible(task, tasks, day) {
       if (task.status !== 'queued' || task.day !== day) return false;
-      return !tasks.some(other => other.id !== task.id && other.day === task.day && other.entity === task.entity && (other.status === 'uncertain' || other.status === 'sending' || (other.status === 'queued' && compareTasks(other, task) < 0)));
+      return !tasks.some(other => other.id !== task.id && other.day === task.day && other.entity === task.entity && ((other.status === 'uncertain' && !(typeof options.independentOfUncertain === 'function' && options.independentOfUncertain(clone(task),clone(other))===true)) || other.status === 'sending' || (other.status === 'queued' && compareTasks(other, task) < 0)));
     }
     function recoverInterrupted() {
       // Only the exclusive writer may decide a persisted `sending` record is orphaned.
@@ -247,6 +247,47 @@
         persist(task); notify(); scheduleFlush(); return result(task);
       }).catch(error => { noteError(error); throw error; });
     }
+    // Verify one dispatched step from a fresh server read. A missing marker is
+    // never proof that an SMS was not sent, and must never trigger a resend.
+    async function verifyPending() {
+      if (typeof options.verify !== 'function' || !canSend()) return [];
+      return exclusive(async () => {
+        recoverInterrupted();
+        const verified = [];
+        for (const task of readTasks()) {
+          if (disposed || task.day !== currentDay() || task.status !== 'uncertain') continue;
+          let evidence;
+          try { evidence = await options.verify(clone(task.steps[task.cursor]), clone(task)); }
+          catch (_) { continue; }
+          if (evidence !== true) continue;
+          task.results.push({serverVerified: true}); task.cursor++; task.updatedAt = now();
+          task.status = task.cursor === task.steps.length ? 'confirmed' : 'queued';
+          if (task.status === 'confirmed') task.finishedAt = task.updatedAt;
+          delete task.error; delete task.errorCode;
+          persist(task); verified.push(task.id);
+        }
+        notify(); scheduleFlush(); return verified;
+      }).catch(error => { noteError(error); throw error; });
+    }
+    // Repair pre-3.1.2 identity grouping under the same cross-tab writer lock.
+    // Preserve a separate original record before changing bookkeeping, never
+    // the request payload, cursor, response or dispatch state.
+    async function migrateEntities(normalize) {
+      return exclusive(async () => {
+        for (const task of readTasks()) {
+          const entity = normalize(clone(task));
+          if (typeof entity !== 'string' || !entity || entity === task.entity) continue;
+          const backupKey = 'coconara:outbox-backup:3.1.2:' + encodeURIComponent(scope) + ':' + task.id;
+          try { if (!storage.getItem(backupKey)) {const raw=JSON.stringify(task);storage.setItem(backupKey,raw);if(storage.getItem(backupKey)!==raw)throw new Error('backup verification failed');} }
+          catch (error) { throw storageFailure(error); }
+          task.entity = entity;
+          task.fingerprint = stable({entity, steps: task.steps, day: task.day});
+          task.identityRepaired = true;
+          persist(task);
+        }
+        notify();
+      });
+    }
     async function reconcile(predicate) {
       if (typeof predicate !== 'function') throw failure('INVALID_PREDICATE', '서버 반영 확인 함수가 필요합니다.');
       return exclusive(async () => {
@@ -274,7 +315,7 @@
     if (typeof root.addEventListener === 'function') root.addEventListener('storage', storageChanged);
     function dispose() { disposed = true; if (typeof root.removeEventListener === 'function') root.removeEventListener('storage', storageChanged); }
     scheduleFlush();
-    return {enqueue, list: readTasks, flush, reconcile, resolve, diagnostics, dispose};
+    return {enqueue, list: readTasks, flush, reconcile, resolve, verifyPending, migrateEntities, diagnostics, dispose};
   }
   return {create};
 });
