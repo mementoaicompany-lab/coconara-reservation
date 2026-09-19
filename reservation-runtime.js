@@ -39,6 +39,19 @@ function taskTarget(task){
 }
 function findOperationBooking(keys){return [...bookings,...newBookings].find(b=>keys.includes(operationKey(b)));}
 function findOperationWalkin(key){return walkinList.find(w=>`walkin|${w.phone}|${w.time}`===key);}
+function operationTargetPresent(task){
+  const effects=task.effects||[];
+  if(!effects.some(e=>e.kind==='booking'||(e.kind==='sms'&&!e.walkin)))return true;
+  const identity=operationIdentityMap(),entity=identity(taskTarget(task)),keys=new Set();
+  let creating=false;
+  for(const related of operationTasks().filter(isPendingOperation))if(identity(taskTarget(related))===entity){
+    for(const e of related.effects||[])if(e.kind==='booking'||(e.kind==='sms'&&!e.walkin)){
+      for(const key of e.keys||[])keys.add(key);
+      if(e.create&&operationState(related)!=='confirmed')creating=true;
+    }
+  }
+  return creating||[...(OPS.base?.bookings||[]),...(OPS.base?.newBookings||[])].some(b=>keys.has(operationKey(b)));
+}
 function bookingEffect(key,patch,options={}){
   const row=findOperationBooking([key,...(options.keys||[])]);
   return {...options,kind:'booking',keys:[key,...(options.keys||[])],patch,row:row?cloneOperation(row):options.row};
@@ -80,7 +93,9 @@ function applyOperationEffects(){
     for(const effect of task.effects||[]){
       if(effect.kind==='booking'){
         let b=entities.get(entity)||findOperationBooking(effect.keys);
-        if(!b && effect.row){b={...cloneOperation(effect.row),id:nextId++};(b.isNew?newBookings:bookings).push(b);}
+        // Snapshots on edits are recovery records, never evidence of a current
+        // reservation. Only an explicit, not-yet-confirmed addition creates a row.
+        if(!b && effect.create && (state!=='confirmed'||!OPS.raw||OPS.rawAt<=Number(task.finishedAt||task.updatedAt)) && effect.row){b={...cloneOperation(effect.row),id:nextId++};(b.isNew?newBookings:bookings).push(b);}
         if(!b)continue;
         entities.set(entity,b);
         if(effect.remove){bookings=bookings.filter(x=>x!==b);newBookings=newBookings.filter(x=>x!==b);continue;}
@@ -178,6 +193,7 @@ function createOperationOutbox(){
   OPS.tasks=[];OPS.smsStates=new Map();OPS.identityReady=false;
   OPS.outbox=CoconaraOutbox.create({storage:localStorage,scope:OPS.scope,day:localDay,lock:navigator.locks,
     canSend:()=>OPS.identityReady && OPS.verified && scope===operationScope() && OPS.modelDay===localDay() && !_settingsApplying && navigator.onLine!==false,
+    canDispatch:task=>!!OPS.raw && operationTargetPresent(task),
     verify:(body,task)=>verifyOperationStep(body,task,OPS.readback),
     independentOfUncertain:(next,previous)=>previous.steps[previous.cursor]?.action==='sendSms' && next.steps.every(body=>body.action==='setStatus' && body.key===previous.steps.find(step=>step.action==='setStatus')?.key && !body.meta?.sentSms),
     send:async(body)=>{
@@ -274,7 +290,7 @@ fetchCore=async function(priority){
 };
 const originalApplyCore=applyCore;
 applyCore=function(payload){
-  OPS.raw=cloneOperation(payload);originalApplyCore(payload);rememberCoreBase();OPS.verified=true;
+  OPS.raw=cloneOperation(payload);OPS.rawAt=Date.now();originalApplyCore(payload);rememberCoreBase();OPS.verified=true;
   applyOperationEffects();saveOperationCache();render();renderWalkinTbl();
 };
 const originalLoadCore=loadBookingsFromGAS;
@@ -640,7 +656,7 @@ function paintOperationQueue(){
     const label=document.createElement('strong');label.textContent=task.label||'저장 작업';
     const target=document.createElement('span');const effect=(task.effects||[]).find(e=>e.row||e.key||e.keys);const rowInfo=effect?.row;const parts=String(effect?.keys?.[0]||effect?.key||task.entity).split('|');
     target.textContent=taskTarget(task)==='__order__wait'?'목록 표시 순서':rowInfo?`${rowInfo.time} ${rowInfo.name} · ${String(rowInfo.phone).slice(-4)}`:parts[0]==='walkin'?`현장 ${parts[2]||''} · ${String(parts[1]).slice(-4)}`:parts.length===3?`${parts[0]} ${parts[1]} · ${parts[2].slice(-4)}`:String(task.entity).slice(0,65);
-    const status=document.createElement('span');status.textContent=task.day!==localDay()?'이전 날짜 작업 · 자동 전송 안 함':captions[operationState(task)]||'확인 필요';row.append(label,target,status);
+    const status=document.createElement('span');status.textContent=task.day!==localDay()?'이전 날짜 작업 · 자동 전송 안 함':OPS.raw&&!operationTargetPresent(task)?'현재 시트에 없는 예약 · 기록 보관 중, 자동 전송 안 함':captions[operationState(task)]||'확인 필요';row.append(label,target,status);
     if(operationState(task)==='uncertain'){
       const currentStep=task.steps[task.cursor||0];const ack=document.createElement('button');ack.textContent=currentStep?.action==='sendSms'?'발송내역 확인 후 완료':'서버 반영 다시 확인';ack.onclick=()=>{
         if(currentStep?.action!=='sendSms'){ack.disabled=true;verifyOperations().finally(()=>paintOperationQueue());return;}

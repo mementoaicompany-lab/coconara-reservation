@@ -150,6 +150,7 @@
     }
     function eligible(task, tasks, day) {
       if (task.status !== 'queued' || task.day !== day) return false;
+      if (typeof options.canDispatch === 'function' && options.canDispatch(clone(task)) !== true) return false;
       return !tasks.some(other => other.id !== task.id && other.day === task.day && other.entity === task.entity && ((other.status === 'uncertain' && !(typeof options.independentOfUncertain === 'function' && options.independentOfUncertain(clone(task),clone(other))===true)) || other.status === 'sending' || (other.status === 'queued' && compareTasks(other, task) < 0)));
     }
     function recoverInterrupted() {
