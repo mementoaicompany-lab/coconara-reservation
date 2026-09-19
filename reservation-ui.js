@@ -30,7 +30,7 @@
     const other={time:'그외',rows:[],fixed:false};
     for(const row of list){const rank=slotRank(row.time);(rank<groups.length?groups[rank]:other).rows.push(row);}
     if(other.rows.length)groups.push(other);
-    return groups;
+    return groups.filter(group=>group.rows.length>0);
   }
   function bindInlineEditor(input,handlers){
     let composing=false,compositionEnding=false,finished=false,pendingBlur=false,timer=null;

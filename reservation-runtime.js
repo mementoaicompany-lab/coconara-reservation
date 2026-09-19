@@ -643,35 +643,46 @@ function restoreSupportingCache(){
   }catch(_){}paintBalances();
 }
 
+function isArchivedOperationDisplay(task){
+  // Keep uncertain SMS receipts visible even if the reservation left the sheet.
+  return operationState(task)!=='sending'
+    && !(operationState(task)==='uncertain' && task.steps[task.cursor||0]?.action==='sendSms')
+    && (task.day!==localDay() || (!!OPS.raw && !operationTargetPresent(task)));
+}
 function paintOperationQueue(){
   const button=document.getElementById('operations-toggle'),list=document.getElementById('operations-list');if(!button||!list)return;
-  const tasks=operationTasks().filter(t=>!['confirmed','cancelled'].includes(operationState(t)));
+  const pending=operationTasks().filter(t=>!['confirmed','cancelled'].includes(operationState(t)));
+  const archived=pending.filter(isArchivedOperationDisplay),tasks=pending.filter(t=>!isArchivedOperationDisplay(t));
   button.textContent=tasks.length?`저장 대기 ${tasks.length}`:'저장 대기';button.classList.toggle('has-pending',!!tasks.length);
   const fragment=document.createDocumentFragment();
   if(OPS.storageError){const p=document.createElement('p');p.textContent=OPS.storageError;p.className='operation-error';fragment.append(p);}
   if(OPS.diagnostics.lockSupported===false&&tasks.length){const p=document.createElement('p');p.textContent='이 브라우저는 안전한 단일 전송을 지원하지 않습니다. 최신 Chrome 또는 운영 플랫폼에서 사용해 주세요. 대기 작업은 보관돼 있습니다.';fragment.append(p);}
+  const history=document.createElement('details');history.className='operation-history';
+  const summary=document.createElement('summary');summary.textContent=`보관 기록 ${archived.length}건`;history.append(summary);
   const captions={queued:'연결 후 전송 대기',sending:'전송 중',uncertain:'처리 결과 확인 필요'};
-  for(const task of tasks){
+  for(const task of [...tasks,...archived]){
+    const archivedDisplay=isArchivedOperationDisplay(task);
     const row=document.createElement('div');row.className='operation-row';
     const label=document.createElement('strong');label.textContent=task.label||'저장 작업';
     const target=document.createElement('span');const effect=(task.effects||[]).find(e=>e.row||e.key||e.keys);const rowInfo=effect?.row;const parts=String(effect?.keys?.[0]||effect?.key||task.entity).split('|');
     target.textContent=taskTarget(task)==='__order__wait'?'목록 표시 순서':rowInfo?`${rowInfo.time} ${rowInfo.name} · ${String(rowInfo.phone).slice(-4)}`:parts[0]==='walkin'?`현장 ${parts[2]||''} · ${String(parts[1]).slice(-4)}`:parts.length===3?`${parts[0]} ${parts[1]} · ${parts[2].slice(-4)}`:String(task.entity).slice(0,65);
     const status=document.createElement('span');status.textContent=task.day!==localDay()?'이전 날짜 작업 · 자동 전송 안 함':OPS.raw&&!operationTargetPresent(task)?'현재 시트에 없는 예약 · 기록 보관 중, 자동 전송 안 함':captions[operationState(task)]||'확인 필요';row.append(label,target,status);
-    if(operationState(task)==='uncertain'){
+    if(!archivedDisplay && operationState(task)==='uncertain'){
       const currentStep=task.steps[task.cursor||0];const ack=document.createElement('button');ack.textContent=currentStep?.action==='sendSms'?'발송내역 확인 후 완료':'서버 반영 다시 확인';ack.onclick=()=>{
         if(currentStep?.action!=='sendSms'){ack.disabled=true;verifyOperations().finally(()=>paintOperationQueue());return;}
         const actionName=currentStep?.action==='sendSms'?'문자 발송':currentStep?.action==='setStatus'?'처리 상태 저장':currentStep?.action==='moveNewToBookings'?'신규 예약 이전':task.label;
         if(confirm(`${target.textContent} · ${actionName}\n구글시트 또는 문자 발송내역에서 이 단계가 처리된 것을 확인했나요? 확인하면 남은 단계가 이어서 처리됩니다.`))OPS.outbox.resolve(task.id,'confirmed').catch(()=>toast('확인 내용을 저장하지 못했습니다.'));
       };row.append(ack);
     }
-    if(operationState(task)==='queued'&&task.cursor===0){
+    if(!archivedDisplay && operationState(task)==='queued'&&task.cursor===0){
       const cancel=document.createElement('button');cancel.textContent=operationState(task)==='queued'&&task.cursor===0?'대기 취소':'기록 정리';cancel.onclick=()=>{
         if(confirm(operationState(task)==='queued'&&task.cursor===0?'아직 전송하지 않은 작업을 취소할까요?':'구글시트·문자 발송내역에서 처리 결과를 확인한 후 기록을 정리해 주세요. 이미 전달된 작업을 취소하는 기능은 아닙니다. 결과를 확인했나요?')){OPS.outbox.resolve(task.id,'cancelled').then(()=>loadBookingsFromGAS({quiet:true})).catch(()=>toast('대기 기록을 저장하지 못했습니다.'));}
       };row.append(cancel);
     }
-    fragment.append(row);
+    (archivedDisplay?history:fragment).append(row);
   }
   if(!tasks.length&&!OPS.storageError){const empty=document.createElement('p');empty.textContent='대기 중인 작업이 없습니다.';fragment.append(empty);}
+  if(archived.length)fragment.append(history);
   list.replaceChildren(fragment);
 }
 function installOperationUI(){
