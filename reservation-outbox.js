@@ -105,6 +105,11 @@
       }
     }
     function noteError(error) { errorState = {code: error.code || 'OUTBOX_ERROR', message: error.message || '작업 기록을 확인해 주세요.'}; notify(); }
+    function failureEvidence(task) {
+      if (typeof options.failureEvidence !== 'function') return null;
+      try { const value = options.failureEvidence(clone(task.steps[task.cursor]), clone(task)); return value ? clone(value) : null; }
+      catch (_) { return null; }
+    }
     function diagnostics() { return {lockSupported, flushing, error: errorState ? {...errorState} : null, blockedReason: !lockSupported ? 'lock-unavailable' : null}; }
     function awaitTask(task) {
       if (TERMINAL.has(task.status)) return Promise.resolve(result(task));
@@ -132,7 +137,7 @@
       try {
         const stored = readTasks();
         const forEntity = stored.filter(task => task.entity === metadata.entity && task.day === day);
-        const pending = forEntity.filter(task => PENDING.has(task.status));
+        const pending = forEntity.filter(task => PENDING.has(task.status) && task.id !== metadata.replaces);
         const lastPending = pending[pending.length - 1];
         // Only adjacent identical intents deduplicate: A → B → A must keep all three.
         const existing = lastPending && lastPending.fingerprint === fingerprint ? lastPending : null;
@@ -140,6 +145,7 @@
         const createdAt = now();
         const random = root.crypto && typeof root.crypto.randomUUID === 'function' ? root.crypto.randomUUID() : Math.random().toString(36).slice(2) + '-' + (++sequence).toString(36);
         const task = {version: 1, id: createdAt.toString(36) + '-' + random, scope, day, label: String(metadata.label || '예약 처리'), entity: metadata.entity, effects, steps: safeSteps, fingerprint, status: 'queued', cursor: 0, results: [], createdAt, updatedAt: createdAt, ordinal: stored.reduce((max, item) => Math.max(max, ordinal(item)), 0) + 1, producer, sequence: ++producerSequence, previousEntityTaskId: forEntity.length ? forEntity[forEntity.length - 1].id : null};
+        if (metadata.replaces) task.retryOf = metadata.replaces;
         persist(task);
         const promise = awaitTask(task);
         errorState = null;
@@ -188,14 +194,28 @@
           settle(tasks);
           const task = tasks.find(item => eligible(item, tasks, currentDay()));
           if (!task || !canSend()) break;
+          // A server-confirmed unstarted request resumes its exact saved wire
+          // payload, including its original request ID and resend intent.
+          const savedDispatch = task.dispatches?.[task.cursor];
+          let body = clone(savedDispatch || task.steps[task.cursor]);
+          if (!savedDispatch && typeof options.prepareStep === 'function') {
+            body = clone(options.prepareStep(body, clone(task)));
+            const allowedAction = body?.action === task.steps[task.cursor].action || (typeof options.allowPreparedAction === 'function' && options.allowPreparedAction(task.steps[task.cursor].action, body?.action) === true);
+            if (!body || typeof body !== 'object' || Array.isArray(body) || !allowedAction) throw failure('INVALID_DISPATCH', '전송할 작업 형식을 확인해 주세요.');
+            // Keep the original intent/fingerprint unchanged for deduplication.
+            // Persist the exact request before dispatch so a lost response can
+            // be verified by its request ID after a page or app restart.
+            task.dispatches = {...task.dispatches, [task.cursor]: body};
+          }
           task.status = 'sending'; task.updatedAt = now(); task.startedAt = task.startedAt || task.updatedAt;
           persist(task); // Must finish before invoking a function that can perform a write.
           notify();
           let response;
-          try { response = await options.send(clone(task.steps[task.cursor]), clone(task)); }
+          try { response = await options.send(clone(body), clone(task)); }
           catch (error) {
             task.status = 'uncertain'; task.updatedAt = now(); task.error = '서버 처리 결과를 확인하지 못했습니다. 중복 처리를 막기 위해 자동으로 다시 보내지 않습니다.';
             task.errorCode = typeof error?.code === 'string' ? error.code.slice(0, 80) : 'UNCONFIRMED_RESULT';
+            const evidence = failureEvidence(task); if (evidence) task.failureEvidence = evidence;
             persist(task);
             notify();
             continue;
@@ -248,6 +268,24 @@
         persist(task); notify(); scheduleFlush(); return result(task);
       }).catch(error => { noteError(error); throw error; });
     }
+    // A retry is a new, explicitly requested intent. The caller must provide
+    // authoritative failure evidence; transport uncertainty alone is not enough.
+    async function retryFailed(id) {
+      return exclusive(async () => {
+        recoverInterrupted();
+        const tasks = readTasks(), task = tasks.find(item => item.id === id);
+        if (!task) return null;
+        const previous = tasks.find(item => item.id === task.retryTaskId);
+        if (previous) return {id: previous.id, promise: awaitTask(previous)};
+        if (task.status !== 'uncertain' || task.day !== currentDay() || typeof options.canRetryFailed !== 'function' || options.canRetryFailed(clone(task)) !== true || typeof options.retrySteps !== 'function') throw failure('INVALID_RETRY', '실패가 확인된 작업만 새 요청으로 다시 보낼 수 있습니다.');
+        const replacement = tasks.find(item => item.retryOf === task.id);
+        const entry = replacement ? {id: replacement.id, promise: awaitTask(replacement)} : enqueue(options.retrySteps(clone(task)), {entity: task.entity, label: task.label.replace(/ · 재시도$/, '') + ' · 재시도', effects: task.effects, replaces: task.id});
+        // Save the replacement first. If the old record cannot be updated, its
+        // uncertainty continues blocking that replacement rather than losing it.
+        task.status = 'cancelled'; task.retryTaskId = entry.id; task.updatedAt = now(); task.finishedAt = task.updatedAt;
+        persist(task); notify(); scheduleFlush(); return entry;
+      }).catch(error => { noteError(error); throw error; });
+    }
     // Verify one dispatched step from a fresh server read. A missing marker is
     // never proof that an SMS was not sent, and must never trigger a resend.
     async function verifyPending() {
@@ -260,7 +298,19 @@
           let evidence;
           try { evidence = await options.verify(clone(task.steps[task.cursor]), clone(task)); }
           catch (_) { continue; }
-          if (evidence !== true) continue;
+          if (evidence !== true) {
+            const failed = failureEvidence(task);
+            if (failed && stable(failed) !== stable(task.failureEvidence)) { task.failureEvidence = failed; task.updatedAt = now(); persist(task); }
+            // Only a fresh authoritative absence result may release this same
+            // request. Unknown, busy, unsupported and failed results stay held.
+            if (!failed && task.dispatches?.[task.cursor] && now() >= Number(task.nextResumeAt || 0) && typeof options.canResumeUnstarted === 'function' && options.canResumeUnstarted(clone(task.steps[task.cursor]), clone(task)) === true) {
+              task.status = 'queued'; task.updatedAt = now(); task.lastResumeAt = task.updatedAt;
+              task.resumeCount = Number(task.resumeCount || 0) + 1;
+              task.nextResumeAt = task.updatedAt + Math.min(300000, 30000 * Math.pow(2, Math.min(task.resumeCount - 1, 4)));
+              delete task.error; delete task.errorCode; persist(task);
+            }
+            continue;
+          }
           task.results.push({serverVerified: true}); task.cursor++; task.updatedAt = now();
           task.status = task.cursor === task.steps.length ? 'confirmed' : 'queued';
           if (task.status === 'confirmed') task.finishedAt = task.updatedAt;
@@ -316,7 +366,7 @@
     if (typeof root.addEventListener === 'function') root.addEventListener('storage', storageChanged);
     function dispose() { disposed = true; if (typeof root.removeEventListener === 'function') root.removeEventListener('storage', storageChanged); }
     scheduleFlush();
-    return {enqueue, list: readTasks, flush, reconcile, resolve, verifyPending, migrateEntities, diagnostics, dispose};
+    return {enqueue, list: readTasks, flush, reconcile, resolve, retryFailed, verifyPending, migrateEntities, diagnostics, dispose};
   }
   return {create};
 });

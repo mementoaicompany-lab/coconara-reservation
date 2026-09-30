@@ -1,18 +1,35 @@
 'use strict';
 // Shared by the website and the packaged desktop view. No credentials live here.
-var OPS={outbox:null,verified:false,raw:null,storageError:'',started:false,scope:'',paintScheduled:false,claims:[],cacheTimer:null,modelDay:'',modelSource:'',tasks:[],smsStates:new Map(),diagnostics:{},base:null,needsRebase:false,identityReady:false,verification:null,verifyTimer:null,readback:null};
+var OPS={outbox:null,verified:false,raw:null,storageError:'',started:false,scope:'',paintScheduled:false,claims:[],cacheTimer:null,modelDay:'',modelSource:'',tasks:[],smsStates:new Map(),smsReceipts:new Map(),smsReceiptSupport:null,diagnostics:{},base:null,needsRebase:false,identityReady:false,verification:null,verifyTimer:null,readback:null};
 const cloneOperation=value=>JSON.parse(JSON.stringify(value));
 const operationScope=()=>GAS_URL+'|sheet='+String(CFG.sheetId||'');
 const operationKey=b=>`${b.time}|${b.name}|${b.phone}`;
 const operationCacheKey=()=>`coconara-reservation-cache-v2:${encodeURIComponent(operationScope())}:${localDay()}`;
 const operationTasks=()=>OPS.tasks;
+const isSmsAction=action=>action==='sendSms'||action==='sendSmsTracked';
+function smsDispatch(task,index=task.cursor){
+  const body=task.dispatches?.[index];
+  return isSmsAction(task.steps[index]?.action) && isSmsAction(body?.action) && body.requestId===task.id+':'+index && body.requestDay===task.day?body:null;
+}
+function failedSmsReceipt(task){
+  const request=smsDispatch(task);if(!request)return null;
+  const current=OPS.smsReceipts.get(request.requestId),saved=task.failureEvidence;
+  if(current&&!['unknown','not_started'].includes(current.state))return current.state==='failed'?current:null;
+  return saved?.kind==='smsReceipt'&&saved.requestId===request.requestId&&saved.state==='failed'?saved:null;
+}
+function smsTaskState(task){
+  const index=task.steps.findIndex(step=>step.action==='sendSms');
+  if(index>=0&&task.cursor>index)return 'accepted-saving';
+  if(operationState(task)==='uncertain'&&task.steps[task.cursor]?.action==='sendSms'&&!smsDispatch(task))return 'legacy-uncertain';
+  return failedSmsReceipt(task)?'failed':operationState(task);
+}
 function indexOperationTasks(tasks){
   const before=new Set(OPS.tasks.filter(t=>operationState(t)==='cancelled').map(t=>t.id));
   if((tasks||[]).some(t=>operationState(t)==='cancelled'&&!before.has(t.id)))OPS.needsRebase=true;
   OPS.tasks=tasks||[];OPS.smsStates=new Map();
   for(const task of OPS.tasks){if(task.day!==localDay()||['confirmed','cancelled'].includes(operationState(task)))continue;
     for(const effect of task.effects||[]){if(effect.kind!=='sms')continue;
-      for(const key of effect.keys||[effect.key])OPS.smsStates.set(key+'::'+effect.label,operationState(task));
+      for(const key of effect.keys||[effect.key])OPS.smsStates.set(key+'::'+effect.label,smsTaskState(task));
     }
   }
 }
@@ -181,7 +198,7 @@ function operationsChanged(){
 function ensureOperationContext(){
   if(OPS.modelDay===localDay()&&OPS.modelSource===operationScope())return;
   const sourceChanged=OPS.modelSource!==operationScope();
-  OPS.modelDay=localDay();OPS.modelSource=operationScope();OPS.verified=false;OPS.raw=null;OPS.claims=[];OPS.base=null;
+  OPS.modelDay=localDay();OPS.modelSource=operationScope();OPS.verified=false;OPS.raw=null;OPS.claims=[];OPS.base=null;OPS.smsReceipts=new Map();OPS.smsReceiptSupport=null;OPS.smsReceiptRetryAt=0;
   CORE.lastSuccess=0;CORE.lastDate='';CORE.generation++;CORE.error='새 날짜·연결의 예약을 확인합니다';
   bookings=[];newBookings=[];walkinList=[];doneOrder=[];walkinDoneOrder=[];waitCustomOrder=[];bulkSelected.clear();opMemos=[];
   if(sourceChanged&&OPS.outbox){OPS.outbox.dispose();createOperationOutbox();}
@@ -190,22 +207,41 @@ function ensureOperationContext(){
 function createOperationOutbox(){
   OPS.scope=operationScope();
   const dispatchUrl=GAS_URL,scope=OPS.scope;
-  OPS.tasks=[];OPS.smsStates=new Map();OPS.identityReady=false;
+  OPS.tasks=[];OPS.smsStates=new Map();OPS.smsReceipts=new Map();OPS.smsReceiptSupport=null;OPS.smsReceiptRetryAt=0;OPS.identityReady=false;
   OPS.outbox=CoconaraOutbox.create({storage:localStorage,scope:OPS.scope,day:localDay,lock:navigator.locks,
     canSend:()=>OPS.identityReady && OPS.verified && scope===operationScope() && OPS.modelDay===localDay() && !_settingsApplying && navigator.onLine!==false,
     canDispatch:task=>!!OPS.raw && operationTargetPresent(task),
     verify:(body,task)=>verifyOperationStep(body,task,OPS.readback),
+    prepareStep:(body,task)=>body.action==='sendSms'?{...body,action:'sendSmsTracked',reservationKey:body.reservationKey||task.steps.find(step=>step.action==='setStatus'&&step.meta?.sentSms)?.key,forceResend:body.forceResend===true,requestId:task.id+':'+task.cursor,requestDay:task.day}:body,
+    allowPreparedAction:(before,after)=>before==='sendSms'&&after==='sendSmsTracked',
+    canResumeUnstarted:(body,task)=>{
+      const request=smsDispatch(task),snapshot=OPS.readback;
+      const receipt=request&&snapshot?.smsReceipts?.[request.requestId];
+      return request?.action==='sendSmsTracked'&&!failedSmsReceipt(task)&&snapshot?.scope===operationScope()&&snapshot.day===task.day&&snapshot.readAt>=task.updatedAt&&snapshot.readAt>Number(task.lastResumeAt||0)&&receipt?.requestId===request.requestId&&receipt.state==='not_started';
+    },
+    canRetryFailed:task=>!!failedSmsReceipt(task),
+    failureEvidence:(body,task)=>{const receipt=OPS.smsReceipts.get(smsDispatch(task)?.requestId);return receipt?.state==='failed'?{kind:'smsReceipt',requestId:receipt.requestId,state:'failed',checkedAt:receipt.checkedAt}:null;},
+    retrySteps:task=>task.steps.slice(task.cursor).map((body,index)=>index===0?{...body,forceResend:true}:body),
     independentOfUncertain:(next,previous)=>previous.steps[previous.cursor]?.action==='sendSms' && next.steps.every(body=>body.action==='setStatus' && body.key===previous.steps.find(step=>step.action==='setStatus')?.key && !body.meta?.sentSms),
     send:async(body)=>{
       _writesPending++;_writeRevision++;netPaint();
-      try{return await fetchT(dispatchUrl,{method:'POST',body:JSON.stringify(body)},CFG.timeoutMs,diagnostic=>{
+      try{const response=await fetchT(dispatchUrl,{method:'POST',body:JSON.stringify(body)},isSmsAction(body.action)?Math.min(Number(CFG.timeoutMs)||20000,20000):CFG.timeoutMs,diagnostic=>{
         if(diagnostic.phase==='complete'||diagnostic.code!=='OK'){
           try{const key='coconara-operation-diagnostics',history=JSON.parse(localStorage.getItem(key)||'[]');
             history.push({at:new Date().toISOString(),action:body.action,phase:diagnostic.phase,code:diagnostic.code,status:diagnostic.status,elapsedMs:diagnostic.elapsedMs});
             localStorage.setItem(key,JSON.stringify(history.slice(-100)));
           }catch(_){}
         }
-      });}
+      },data=>{
+        if(scope!==operationScope()||!isSmsAction(body.action)||data?.supported!==true||data.requestId!==body.requestId||data.state!=='failed')return;
+        OPS.smsReceipts.set(body.requestId,{requestId:body.requestId,state:'failed',checkedAt:data.checkedAt});
+        OPS.smsReceiptSupport=true;
+      });
+        const receipt=response.receipt||(response.supported===true?response:null);
+        if(body.action==='sendSmsTracked'&&(response.supported!==true||!receipt))throw invalidPayload();
+        if(isSmsAction(body.action)&&receipt&&(receipt.requestId!==body.requestId||!['accepted','delivered'].includes(receipt.state)))throw invalidPayload();
+        return response;
+      }
       finally{_writesPending--;_writeRevision++;_writeQuietUntil=Date.now()+500;netPaint();scheduleOperationVerification();}
     },onChange:(tasks,diagnostics)=>{if(OPS.scope!==scope)return;OPS.diagnostics=diagnostics||{};if(tasks)indexOperationTasks(tasks);operationsChanged();}});
   indexOperationTasks(OPS.outbox.list());
@@ -249,45 +285,41 @@ corePaint=function(){
   if(CORE.fleetLoaded)document.querySelectorAll('.fleet-panel input').forEach(el=>{el.disabled=!!_settingsApplying;});
 };
 
-// Three read slots and one bounded auxiliary lane are independent of writes.
-let _auxChain=Promise.resolve();const _auxReads=new Map();
+// Reads share an in-flight request only when its source, parameters and deadline
+// match. A verification read must also start after the evidence boundary.
+let _auxChain=Promise.resolve();const _activeReads=new Map();
 gasGet=function(action,params={},opt={}){
-  const url=GAS_URL,query=new URLSearchParams({action,...params});
-  const native=window.coconaraReservation;
+  const url=GAS_URL,query=new URLSearchParams({action,...params}),native=window.coconaraReservation;
   const timeout=READ_ACTIONS.includes(action)?Number(opt.timeout||CFG.timeoutMs):Math.min(Number(opt.timeout)||15000,15000);
+  const key=url+'?'+query+'#'+timeout,previous=_activeReads.get(key);
+  const boundary=Number.isFinite(opt.startedAfter)?opt.startedAfter:null;
+  if(previous&&(!opt.fresh||(boundary!==null&&previous.startedAt>boundary))){
+    if(opt.onDiagnostic){previous.listeners.add(opt.onDiagnostic);if(previous.last)opt.onDiagnostic(...previous.last);}
+    return previous.promise;
+  }
+  const entry={startedAt:0,listeners:new Set(opt.onDiagnostic?[opt.onDiagnostic]:[]),last:null,promise:null};
+  const report=(raw,state)=>{entry.last=[raw,state,entry.startedAt];for(const listener of entry.listeners)listener(...entry.last);};
   const run=async()=>{
-    if(native?.read && (native.readActions||READ_ACTIONS).includes(action) && !Object.keys(params).length){
-      const result=await native.read({url,action,timeoutMs:timeout});
+    entry.startedAt=Date.now();
+    const paramKeys=Object.keys(params),nativeParams=!paramKeys.length||(action==='getSmsReceipts'&&paramKeys.length===1&&paramKeys[0]==='ids');
+    if(native?.read && (native.readActions||READ_ACTIONS).includes(action) && nativeParams){
+      report({phase:'headers',code:'OK',timeoutMs:timeout},'pending');
+      const result=await native.read({url,action,timeoutMs:timeout,...(paramKeys.length?{params}: {})});
+      report(result.diagnostic||{phase:'complete',code:result.ok?'OK':'NETWORK_ERROR',timeoutMs:timeout},result.ok?'success':'failed');
       if(!result.ok)throw Object.assign(new Error(result.error||'시트 연결 오류'),{code:result.diagnostic?.code});
       return result.data;
     }
-    return fetchT(`${url}?${query}`,{},timeout,raw=>{
-    opt.onDiagnostic?.(raw,raw.code!=='OK'?'failed':(raw.phase==='complete'?'success':'pending'),0);
-    });
+    return fetchT(`${url}?${query}`,{},timeout,raw=>report(raw,raw.code!=='OK'?'failed':(raw.phase==='complete'?'success':'pending')));
   };
-  if(READ_ACTIONS.includes(action)||opt.fresh)return run();
-  const key=url+'?'+query;if(_auxReads.has(key))return _auxReads.get(key);
-  // Balance providers can be slow; their reads never occupy the memo/fleet lane.
-  const balance=['getSolapiBalance','getNaverAdBalance'].includes(action);
-  const promise=balance?run():_auxChain.then(run,run);if(!balance)_auxChain=promise.catch(()=>{});_auxReads.set(key,promise);
-  promise.finally(()=>_auxReads.delete(key)).catch(()=>{});return promise;
+  // Verification and reservation reads never wait behind auxiliary providers.
+  const independent=READ_ACTIONS.includes(action)||opt.fresh||['getSolapiBalance','getNaverAdBalance'].includes(action);
+  entry.promise=independent?run():_auxChain.then(run,run);
+  if(!independent)_auxChain=entry.promise.catch(()=>{});
+  _activeReads.set(key,entry);
+  entry.promise.finally(()=>{if(_activeReads.get(key)===entry)_activeReads.delete(key);}).catch(()=>{});
+  return entry.promise;
 };
-const originalFetchCore=fetchCore;
-fetchCore=async function(priority){
-  if(!window.coconaraReservation?.read)return originalFetchCore(priority);
-  const attempt=++_readAttempt;
-  CORE.readDiagnostics=READ_ACTIONS.map(action=>({action,state:'pending',phase:'headers',code:'OK',startedAt:Date.now(),timeoutMs:CFG.timeoutMs}));
-  const responses=await Promise.allSettled(READ_ACTIONS.map(async action=>{
-    const result=await window.coconaraReservation.read({url:GAS_URL,action,timeoutMs:CFG.timeoutMs});
-    noteReadDiagnostic(attempt,action,result.diagnostic||{},result.ok?'success':'failed',Date.now());
-    if(!result.ok)throw Object.assign(new Error(result.error||'시트 연결 오류'),{code:result.diagnostic?.code});
-    try{validateCore({dataB:action==='getBookings'?result.data:{bookings:[]},dataN:action==='getNew'?result.data:{newBookings:[]},dataS:action==='getStatus'?result.data:{statusMap:{}}});}
-    catch(error){noteReadDiagnostic(attempt,action,{...result.diagnostic,phase:'validation',code:'INVALID_PAYLOAD'},'failed',Date.now());throw error;}
-    return result.data;
-  }));
-  const failed=responses.find(r=>r.status==='rejected');if(failed)throw failed.reason;
-  const payload={dataB:responses[0].value,dataN:responses[1].value,dataS:responses[2].value};validateCore(payload);return payload;
-};
+// Both transports now use the same read sharing, diagnostics and validation.
 const originalApplyCore=applyCore;
 applyCore=function(payload){
   OPS.raw=cloneOperation(payload);OPS.rawAt=Date.now();originalApplyCore(payload);rememberCoreBase();OPS.verified=true;
@@ -308,6 +340,10 @@ function containsOperationValue(actual,expected){
 }
 function verifyOperationStep(body,task,snapshot){
   if(!snapshot||snapshot.scope!==operationScope()||snapshot.day!==task.day||snapshot.readAt<task.updatedAt)return false;
+  if(body.action==='sendSms'){
+    const request=smsDispatch(task),receipt=request&&snapshot.smsReceipts?.[request.requestId];
+    return !!receipt&&receipt.requestId===request.requestId&&['accepted','delivered'].includes(receipt.state);
+  }
   const state=snapshot.dataS;
   const matches=(rows,time,name,phone)=>Array.isArray(rows)?rows.filter(r=>r.time===time&&r.name===name&&r.phone===phone):null;
   if(body.action==='setStatus')return !!state && (body.status===undefined||state.statusMap?.[body.key]===body.status) && (body.meta===undefined||containsOperationValue(state.metaMap?.[body.key]||{},body.meta));
@@ -355,25 +391,28 @@ function verifyOperationStep(body,task,snapshot){
 }
 function scheduleOperationVerification(){
   if(OPS.verifyTimer||OPS.verification)return;
-  OPS.verifyTimer=setTimeout(()=>{OPS.verifyTimer=null;verifyOperations().catch(()=>{});},5000);
+  OPS.verifyTimer=setTimeout(()=>{OPS.verifyTimer=null;verifyOperations({automatic:true}).catch(()=>{});},5000);
 }
-async function verifyOperations(){
+async function verifyOperations({automatic=false}={}){
   if(OPS.verification)return OPS.verification;
   const pending=operationTasks().filter(t=>t.day===localDay()&&operationState(t)==='uncertain');
-  if(!pending.length||navigator.onLine===false||_settingsApplying)return [];
-  const scope=operationScope(),day=localDay(),readAt=Date.now(),actions=new Set();
+  if(!pending.length||navigator.onLine===false||_settingsApplying||(automatic&&document.hidden))return [];
+  const scope=operationScope(),day=localDay(),readAt=Date.now(),actions=new Set(),smsIds=[];
   for(const task of pending){const body=task.steps[task.cursor];
     if(['setStatus','deleteStatus','migrateStatusKey'].includes(body.action))actions.add('getStatus');
     if(['updateBookingCell','deleteBookingRow'].includes(body.action))actions.add(body.sheet==='new'?'getNew':'getBookings');
     if(body.action==='moveNewToBookings'){actions.add('getBookings');actions.add('getNew');}
     const auxiliary={setFleet:'getFleet',markClaimSeen:'getClaims',saveOpMemos:'getOpMemos',saveSmsConfig:'getSmsConfig'}[body.action];
     if(auxiliary)actions.add(auxiliary);
+    const request=smsDispatch(task);if(request&&(!automatic||!failedSmsReceipt(task)))smsIds.push(request.requestId);
   }
-  if(!actions.size)return [];
+  // Old ambiguous sends have no persisted request protocol. They stay in
+  // settings diagnostics; an old marker cannot establish their receipt.
+  if(!actions.size&&!smsIds.length)return [];
   OPS.verification=(async()=>{
-    const snapshot={scope,day,readAt};
-    await Promise.allSettled([...actions].map(async action=>{
-      const data=await gasGet(action,{}, {timeout:20000,fresh:true});
+    const snapshot={scope,day,readAt,smsReceipts:Object.create(null)};
+    const reads=[...actions].map(async action=>{
+      const data=await gasGet(action,{}, {timeout:20000,fresh:true,startedAfter:readAt});
       if(action==='getStatus'&&isRecord(data.statusMap)&&isRecord(data.metaMap||{}))snapshot.dataS=data;
       if(action==='getBookings'&&Array.isArray(data.bookings))snapshot.dataB=data;
       if(action==='getNew'&&Array.isArray(data.newBookings))snapshot.dataN=data;
@@ -381,14 +420,42 @@ async function verifyOperations(){
       if(action==='getClaims'&&Array.isArray(data.claims))snapshot.dataClaims=data;
       if(action==='getOpMemos'&&Array.isArray(data.opMemos))snapshot.dataMemos=data;
       if(action==='getSmsConfig'&&Array.isArray(data.settings)&&Array.isArray(data.memos))snapshot.dataSms=data;
-    }));
+    });
+    if(smsIds.length)reads.push((async()=>{
+      if(Date.now()<(OPS.smsReceiptRetryAt||0))return;
+      for(let offset=0;offset<smsIds.length;offset+=10){
+        const ids=smsIds.slice(offset,offset+10);
+        let data;
+        try{data=await gasGet('getSmsReceipts',{ids:JSON.stringify(ids)},{timeout:15000,fresh:true,startedAfter:readAt});}
+        catch(error){
+          // Legacy deployments return a business error for this new action.
+          if(scope===operationScope()&&day===localDay()&&['INVALID_PAYLOAD','INVALID_RESPONSE'].includes(error.code)){
+            OPS.smsReceiptSupport=false;OPS.smsReceiptRetryAt=Date.now()+300000;
+          }
+          throw error;
+        }
+        if(scope!==operationScope()||day!==localDay())return;
+        if(data.supported!==true||!Array.isArray(data.receipts)){
+          OPS.smsReceiptSupport=false;OPS.smsReceiptRetryAt=Date.now()+300000;return;
+        }
+        OPS.smsReceiptSupport=true;OPS.smsReceiptRetryAt=0;
+        for(const id of ids){
+          const matches=data.receipts.filter(receipt=>receipt?.requestId===id);
+          if(matches.length!==1||!['accepted','delivered','failed','pending','unknown','not_started'].includes(matches[0].state))continue;
+          snapshot.smsReceipts[id]=matches[0];OPS.smsReceipts.set(id,matches[0]);
+        }
+      }
+    })());
+    await Promise.allSettled(reads);
     if(scope!==operationScope()||day!==localDay())return [];
     OPS.readback=snapshot;
     const result=await OPS.outbox.verifyPending();
     if(result.length)scheduleCore(1000);
     return result;
   })().finally(()=>{OPS.verification=null;if(operationTasks().some(t=>t.day===localDay()&&operationState(t)==='uncertain')){
-    OPS.verifyTimer=setTimeout(()=>{OPS.verifyTimer=null;verifyOperations().catch(()=>{});},30000);
+    const delay=actions.size?30000:Math.max(30000,(OPS.smsReceiptRetryAt||0)-Date.now());
+    if(OPS.verifyTimer)clearTimeout(OPS.verifyTimer);
+    OPS.verifyTimer=setTimeout(()=>{OPS.verifyTimer=null;verifyOperations({automatic:true}).catch(()=>{});},delay);
   }});
   return OPS.verification;
 }
@@ -560,18 +627,20 @@ function sendQueuedSms(b,t,walkin){
   if(!coreWritable())return Promise.resolve(false);
   const key=walkin?`walkin|${b.phone}|${b.time}`:operationKey(b);
   if(smsOperationState(key,t.label))return Promise.resolve(false);
-  if((walkin?b.sentSms:b.sentSMS)?.[t.label] && !confirm(`${t.title} 문자가 이미 발송된 표시가 있습니다. 다시 발송할까요?`))return Promise.resolve(false);
+  const forceResend=!!(walkin?b.sentSms:b.sentSMS)?.[t.label];
+  if(forceResend && !confirm(`${t.title} 문자가 이미 발송된 표시가 있습니다. 다시 발송할까요?`))return Promise.resolve(false);
   const effects=[{kind:'sms',key:walkin?key:undefined,keys:walkin?undefined:[key],walkin:!!walkin,label:t.label}];
-  return enqueueOperation([{action:'sendSms',phone:b.phone,settingId:Number(t.label)},{action:'setStatus',key,meta:{sentSms:{[t.label]:true}}}],{entity:key,label:`${walkin?'현장':'예약'} 문자 ${t.label}번`,effects}).then(()=>true,()=>false);
+  return enqueueOperation([{action:'sendSms',phone:b.phone,settingId:Number(t.label),reservationKey:key,forceResend},{action:'setStatus',key,meta:{sentSms:{[t.label]:true}}}],{entity:key,label:`${walkin?'현장':'예약'} 문자 ${t.label}번`,effects}).then(()=>true,()=>false);
 }
 sendSMS=function(id,type){const b=[...bookings,...newBookings].find(x=>x.id===id),t=SMS.find(x=>x.id===type);return b&&t?sendQueuedSms(b,t,false):Promise.resolve(false);};
 sendWalkinSmsRow=function(id,type){const w=walkinList.find(x=>x.id===id),t=SMS.find(x=>x.id===type);return w&&t?sendQueuedSms(w,t,true):Promise.resolve(false);};
 bulkSendSms=function(type){const ids=[...bulkSelected];bulkSelected.clear();updateBulkBar();return Promise.all(ids.map(id=>sendSMS(id,type)));};
 function operationSmsButton(b,s,walkin){
   const key=walkin?`walkin|${b.phone}|${b.time}`:operationKey(b),state=smsOperationState(key,s.label),sent=!!(walkin?b.sentSms:b.sentSMS)?.[s.label];
-  const label=state==='sending'?'발송 중':state==='queued'?'발송 대기':state==='uncertain'?'결과 확인 필요':sent?'발송 완료':'미발송';
+  const label=state==='accepted-saving'?'발송 접수 완료 · 기록 저장 확인 중':state==='failed'?'발송 실패 확인 · 자동 재발송 안 함':state==='legacy-uncertain'?'이전 발송 결과 미확인 · 설정에서 기록 확인':state==='sending'?'발송 중':state==='queued'?'발송 대기':state==='uncertain'?'발송 결과 자동 확인 중':sent?'발송 접수 완료':'미발송';
+  const caption={'accepted-saving':'저장 중',failed:'실패','legacy-uncertain':'미확인',sending:'발송 중',queued:'대기',uncertain:'확인 중'}[state]||'';
   const escape=text=>String(text||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  return `<button class="sms-num ${s.cls}${sent?' sent':''}${['sending','queued'].includes(state)?' sending':''}${state==='uncertain'?' uncertain':''}" ${state?'disabled':''} title="${escape(s.title)} · ${label}" onclick="${walkin?'sendWalkinSmsRow':'sendSMS'}(${b.id},'${s.id}')">${s.label}${state?'<span class="sr-only"> '+label+'</span>':''}</button>`;
+  return `<button class="sms-num ${s.cls}${sent?' sent':''}${['sending','queued'].includes(state)?' sending':''}${['uncertain','legacy-uncertain','failed'].includes(state)?' uncertain':''}" ${state?'disabled':''} title="${escape(s.title)} · ${label}" onclick="${walkin?'sendWalkinSmsRow':'sendSMS'}(${b.id},'${s.id}')">${s.label}${state?'<span class="sr-only"> '+caption+'</span>':''}</button>`;
 }
 smsCell=function(b){
   const main=SMS.filter(s=>s.main).map(s=>operationSmsButton(b,s,false)).join(''),extra=SMS.filter(s=>!s.main).map(s=>operationSmsButton(b,s,false)).join('');
@@ -644,10 +713,45 @@ function restoreSupportingCache(){
 }
 
 function isArchivedOperationDisplay(task){
-  // Keep uncertain SMS receipts visible even if the reservation left the sheet.
-  return operationState(task)!=='sending'
-    && !(operationState(task)==='uncertain' && task.steps[task.cursor||0]?.action==='sendSms')
-    && (task.day!==localDay() || (!!OPS.raw && !operationTargetPresent(task)));
+  return operationState(task)!=='sending' && (task.day!==localDay()
+    || (!!OPS.raw && !operationTargetPresent(task))
+    || (operationState(task)==='uncertain' && task.steps[task.cursor]?.action==='sendSms' && !smsDispatch(task)));
+}
+function operationQueueRow(task,archivedDisplay){
+  const state=operationState(task),currentStep=task.steps[task.cursor||0],smsState=smsTaskState(task);
+  const row=document.createElement('div');row.className='operation-row';
+  const label=document.createElement('strong');label.textContent=task.label||'저장 작업';
+  const target=document.createElement('span');const effect=(task.effects||[]).find(e=>e.row||e.key||e.keys);const rowInfo=effect?.row;const parts=String(effect?.keys?.[0]||effect?.key||task.entity).split('|');
+  target.textContent=taskTarget(task)==='__order__wait'?'목록 표시 순서':rowInfo?`${rowInfo.time} ${rowInfo.name} · ${String(rowInfo.phone).slice(-4)}`:parts[0]==='walkin'?`현장 ${parts[2]||''} · ${String(parts[1]).slice(-4)}`:parts.length===3?`${parts[0]} ${parts[1]} · ${parts[2].slice(-4)}`:String(task.entity).slice(0,65);
+  const captions={queued:'연결 후 전송 대기',sending:'전송 중',uncertain:'처리 결과 자동 확인 중'};
+  const status=document.createElement('span');
+  status.textContent=task.day!==localDay()?'이전 날짜 작업 · 자동 전송 안 함':OPS.raw&&!operationTargetPresent(task)?'현재 시트에 없는 예약 · 자동 전송 안 함'
+    :smsState==='accepted-saving'?'문자 발송 접수 완료 · 기록 저장 확인 중'
+    :smsState==='failed'?'문자 발송 실패 확인 · 자동 재발송 안 함'
+    :smsState==='legacy-uncertain'?'이전 발송 결과 미확인 · 발송내역 확인 필요'
+    :state==='uncertain'&&currentStep?.action==='sendSms'?(OPS.smsReceiptSupport===false?'문자 결과 조회 연결 대기 · 자동 재발송 안 함':'문자 발송 결과 자동 확인 중')
+    :captions[state]||'확인 필요';row.append(label,target,status);
+  if(state==='uncertain'&&task.day===localDay()&&(!archivedDisplay||smsState==='legacy-uncertain')){
+    const ack=document.createElement('button');const legacy=smsState==='legacy-uncertain';
+    ack.textContent=legacy?'발송내역 확인 후 완료':currentStep?.action==='sendSms'?'발송 결과 다시 확인':'서버 반영 다시 확인';
+    ack.onclick=()=>{
+      if(!legacy){ack.disabled=true;verifyOperations().finally(()=>paintOperationQueue());return;}
+      if(confirm(`${target.textContent} · 문자 발송\n문자 발송내역에서 이 문자가 처리된 것을 확인했나요? 확인하면 남은 기록 저장을 이어서 처리합니다.`))OPS.outbox.resolve(task.id,'confirmed').catch(()=>toast('확인 내용을 저장하지 못했습니다.'));
+    };row.append(ack);
+  }
+  if(!archivedDisplay&&state==='uncertain'&&smsState==='failed'){
+    const retry=document.createElement('button');retry.textContent='실패 문자 다시 보내기';retry.onclick=()=>{
+      if(!confirm(`${target.textContent} · 문자 발송 실패가 확인됐습니다. 새 요청으로 다시 보낼까요?`))return;
+      retry.disabled=true;
+      OPS.outbox.retryFailed(task.id).catch(()=>toast('재발송 작업을 저장하지 못했습니다.')).finally(()=>paintOperationQueue());
+    };row.append(retry);
+  }
+  if(!archivedDisplay&&state==='queued'&&task.cursor===0){
+    const cancel=document.createElement('button');cancel.textContent='대기 취소';cancel.onclick=()=>{
+      if(confirm('아직 전송하지 않은 작업을 취소할까요?'))OPS.outbox.resolve(task.id,'cancelled').then(()=>loadBookingsFromGAS({quiet:true})).catch(()=>toast('대기 기록을 저장하지 못했습니다.'));
+    };row.append(cancel);
+  }
+  return row;
 }
 function paintOperationQueue(){
   const button=document.getElementById('operations-toggle'),list=document.getElementById('operations-list');if(!button||!list)return;
@@ -657,33 +761,18 @@ function paintOperationQueue(){
   const fragment=document.createDocumentFragment();
   if(OPS.storageError){const p=document.createElement('p');p.textContent=OPS.storageError;p.className='operation-error';fragment.append(p);}
   if(OPS.diagnostics.lockSupported===false&&tasks.length){const p=document.createElement('p');p.textContent='이 브라우저는 안전한 단일 전송을 지원하지 않습니다. 최신 Chrome 또는 운영 플랫폼에서 사용해 주세요. 대기 작업은 보관돼 있습니다.';fragment.append(p);}
-  const history=document.createElement('details');history.className='operation-history';
-  const summary=document.createElement('summary');summary.textContent=`보관 기록 ${archived.length}건`;history.append(summary);
-  const captions={queued:'연결 후 전송 대기',sending:'전송 중',uncertain:'처리 결과 확인 필요'};
-  for(const task of [...tasks,...archived]){
-    const archivedDisplay=isArchivedOperationDisplay(task);
-    const row=document.createElement('div');row.className='operation-row';
-    const label=document.createElement('strong');label.textContent=task.label||'저장 작업';
-    const target=document.createElement('span');const effect=(task.effects||[]).find(e=>e.row||e.key||e.keys);const rowInfo=effect?.row;const parts=String(effect?.keys?.[0]||effect?.key||task.entity).split('|');
-    target.textContent=taskTarget(task)==='__order__wait'?'목록 표시 순서':rowInfo?`${rowInfo.time} ${rowInfo.name} · ${String(rowInfo.phone).slice(-4)}`:parts[0]==='walkin'?`현장 ${parts[2]||''} · ${String(parts[1]).slice(-4)}`:parts.length===3?`${parts[0]} ${parts[1]} · ${parts[2].slice(-4)}`:String(task.entity).slice(0,65);
-    const status=document.createElement('span');status.textContent=task.day!==localDay()?'이전 날짜 작업 · 자동 전송 안 함':OPS.raw&&!operationTargetPresent(task)?'현재 시트에 없는 예약 · 기록 보관 중, 자동 전송 안 함':captions[operationState(task)]||'확인 필요';row.append(label,target,status);
-    if(!archivedDisplay && operationState(task)==='uncertain'){
-      const currentStep=task.steps[task.cursor||0];const ack=document.createElement('button');ack.textContent=currentStep?.action==='sendSms'?'발송내역 확인 후 완료':'서버 반영 다시 확인';ack.onclick=()=>{
-        if(currentStep?.action!=='sendSms'){ack.disabled=true;verifyOperations().finally(()=>paintOperationQueue());return;}
-        const actionName=currentStep?.action==='sendSms'?'문자 발송':currentStep?.action==='setStatus'?'처리 상태 저장':currentStep?.action==='moveNewToBookings'?'신규 예약 이전':task.label;
-        if(confirm(`${target.textContent} · ${actionName}\n구글시트 또는 문자 발송내역에서 이 단계가 처리된 것을 확인했나요? 확인하면 남은 단계가 이어서 처리됩니다.`))OPS.outbox.resolve(task.id,'confirmed').catch(()=>toast('확인 내용을 저장하지 못했습니다.'));
-      };row.append(ack);
-    }
-    if(!archivedDisplay && operationState(task)==='queued'&&task.cursor===0){
-      const cancel=document.createElement('button');cancel.textContent=operationState(task)==='queued'&&task.cursor===0?'대기 취소':'기록 정리';cancel.onclick=()=>{
-        if(confirm(operationState(task)==='queued'&&task.cursor===0?'아직 전송하지 않은 작업을 취소할까요?':'구글시트·문자 발송내역에서 처리 결과를 확인한 후 기록을 정리해 주세요. 이미 전달된 작업을 취소하는 기능은 아닙니다. 결과를 확인했나요?')){OPS.outbox.resolve(task.id,'cancelled').then(()=>loadBookingsFromGAS({quiet:true})).catch(()=>toast('대기 기록을 저장하지 못했습니다.'));}
-      };row.append(cancel);
-    }
-    (archivedDisplay?history:fragment).append(row);
-  }
+  for(const task of tasks)fragment.append(operationQueueRow(task,false));
   if(!tasks.length&&!OPS.storageError){const empty=document.createElement('p');empty.textContent='대기 중인 작업이 없습니다.';fragment.append(empty);}
-  if(archived.length)fragment.append(history);
   list.replaceChildren(fragment);
+  const history=document.getElementById('operation-history');
+  if(history){
+    history.hidden=!archived.length;
+    const summary=document.createElement('summary');summary.textContent=`이 기기 처리 기록 ${archived.length}건`;
+    const children=[summary];
+    // Preserve all records, but build the history only when settings opens it.
+    if(history.open)for(const task of archived)children.push(operationQueueRow(task,true));
+    history.replaceChildren(...children);
+  }
 }
 function installOperationUI(){
   const style=document.createElement('style');style.textContent=`#reservation-sync-status,#reservation-continuity-help,#sync-pill{display:none!important}.operations-panel{padding:14px;background:#fff;border:2px solid #275a39;margin:10px 14px}.operation-row{display:flex;gap:12px;align-items:center;padding:10px 0;flex-wrap:wrap;border-bottom:1px solid #ccd7cc}.operation-row button,#operations-toggle{font:inherit;font-weight:700;padding:8px 12px;border:1px solid #285c37;border-radius:6px;background:white;color:#174728;cursor:pointer}.operation-error{color:#a13215;font-weight:700}#operations-toggle.has-pending{background:#fff1d8}.sms-num.sending{animation:sms-pulse .8s infinite alternate!important}.sms-num.uncertain{outline:2px solid #a34415}.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}@keyframes sms-pulse{from{opacity:1}to{opacity:.25}}`;
@@ -691,16 +780,16 @@ function installOperationUI(){
   const toggle=document.createElement('button');toggle.id='operations-toggle';toggle.type='button';toggle.textContent='저장 대기';toggle.setAttribute('aria-expanded','false');
   const panel=document.createElement('section');panel.id='operations-panel';panel.className='operations-panel';panel.hidden=true;
   const title=document.createElement('strong');title.textContent='이 화면에서 접수한 작업';
-  const help=document.createElement('p');help.textContent='작업은 이 기기에 보관됩니다. 일반 저장은 서버 반영 여부를 자동 확인하며, 다른 고객의 업무는 계속 처리합니다. 문자 발송 결과만 불명확한 경우 발송내역 확인이 필요합니다.';
+  const help=document.createElement('p');help.textContent='작업은 이 기기에 보관되며 처리 결과를 자동 확인합니다. 문자 결과를 확인하는 동안 자동으로 재발송하지 않습니다. 이전 기록은 설정에서 확인할 수 있습니다.';
   const list=document.createElement('div');list.id='operations-list';panel.append(title,help,list);
   toggle.onclick=()=>{panel.hidden=!panel.hidden;toggle.setAttribute('aria-expanded',String(!panel.hidden));paintOperationQueue();};
   const header=document.getElementById('sync-pill')?.parentElement||document.body;header.append(toggle);header.after(panel);
-  const config=document.querySelector('#page-config .cfg-wrap');if(config){const p=document.createElement('p');p.textContent='마지막 전체 예약 조회: ';const time=document.createElement('span');time.id='operation-last-read';p.append(time);config.prepend(p);}
+  const config=document.querySelector('#page-config .cfg-wrap');if(config){const p=document.createElement('p');p.textContent='마지막 전체 예약 조회: ';const time=document.createElement('span');time.id='operation-last-read';p.append(time);config.prepend(p);const history=document.createElement('details');history.id='operation-history';history.className='operation-history';history.hidden=true;history.ontoggle=()=>paintOperationQueue();config.append(history);}
 }
 function startReservationRuntime(){
   installOperationUI();OPS.started=true;OPS.modelDay=localDay();OPS.modelSource=operationScope();restoreOperationCache();restoreSupportingCache();if(!OPS.base)rememberCoreBase();createOperationOutbox();applyOperationEffects();setDate();render();renderWalkinTbl();renderOpMemos();corePaint();paintOperationQueue();
   window.addEventListener('online',()=>{loadBookingsFromGAS({quiet:true});verifyOperations().catch(()=>{});flushOperations().catch(()=>{});});
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden){operationsChanged();flushOperations();}});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden){operationsChanged();flushOperations();scheduleOperationVerification();}});
   window.addEventListener('pagehide',saveOperationCache);
   setInterval(()=>{if(navigator.onLine!==false&&operationTasks().some(t=>t.day===localDay()&&operationState(t)==='queued'))flushOperations().catch(()=>{});},30000);
   Promise.resolve().then(()=>loadBookingsFromGAS({quiet:true}));

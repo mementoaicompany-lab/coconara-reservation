@@ -839,7 +839,7 @@ const GasQ = (function(){
   };
 })();
 
-async function fetchT(url, opts, ms, onDiagnostic){
+async function fetchT(url, opts, ms, onDiagnostic, onPayload){
   const ac = new AbortController();
   const timeout=Number(ms || CFG.timeoutMs) || 60000;
   let timer;
@@ -855,6 +855,7 @@ async function fetchT(url, opts, ms, onDiagnostic){
         phase='body';report('OK');
         let data;
         try{ data=await res.json(); }catch(e){ if(ac.signal.aborted) throw new Error('응답 시간 초과'); throw invalidPayload(); }
+        if(!ac.signal.aborted&&!diagnosticClosed&&onPayload)onPayload(data);
         if(!data || typeof data!=='object' || Array.isArray(data) || data.error || data.ok===false || data.success===false) throw invalidPayload();
         phase='complete';report('OK');return data;
       })(),
@@ -897,6 +898,31 @@ function gasPost(body,opt){
     });
 }
 let _loadingCore=false, _pollBusy=false, _pollTimer=null;
+
+// Stagger automatic reads across open clients without delaying manual work.
+function jitterReadDelay(ms){return ms+Math.floor(Math.random()*Math.min(5000,ms/10));}
+const auxiliaryPollers=new Map();
+function registerAuxiliaryPoll(name,interval,read){
+  const poller={timer:null,dueAt:0,running:false};
+  poller.schedule=function(delay=jitterReadDelay(interval)){
+    clearTimeout(poller.timer);poller.timer=null;poller.dueAt=Date.now()+delay;
+    if(document.hidden)return;
+    poller.timer=setTimeout(async()=>{
+      poller.timer=null;
+      if(document.hidden)return;
+      if(!CORE.lastSuccess||!canAutoRead()){poller.schedule(jitterReadDelay(5000));return;}
+      poller.running=true;
+      try{await read();}catch(_){}finally{poller.running=false;poller.schedule();}
+    },delay);
+  };
+  auxiliaryPollers.set(name,poller);poller.schedule();
+}
+function updateAuxiliaryPollingVisibility(){
+  for(const poller of auxiliaryPollers.values()){
+    if(document.hidden){clearTimeout(poller.timer);poller.timer=null;}
+    else if(!poller.timer&&!poller.running)poller.schedule(jitterReadDelay(Math.max(2000,poller.dueAt-Date.now())));
+  }
+}
 
 // 마지막으로 화면을 만졌을 때 — 직후에는 자동 새로고침을 건너뜁니다
 let LAST_TOUCH = 0;
@@ -1641,8 +1667,8 @@ async function markClaimSeen(type, orderNo){
   }catch(e){}
   loadClaims();
 }
-// 1분마다 클레임 확인
-setInterval(()=>{ if(canAutoRead() && CORE.lastSuccess) loadClaims(); }, 60000);
+// Start the next check only after the previous one finishes; hidden clients pause.
+registerAuxiliaryPoll('claims',60000,()=>loadClaims());
 
 
 // 솔라피/네이버광고 잔액 표시 (헤더 배너 옆)
@@ -1670,8 +1696,7 @@ async function loadBalances(){
   if(html) el.innerHTML=html;
   corePaint();
 }
-// 5분마다 잔액 갱신
-setInterval(()=>{ if(canAutoRead() && CORE.lastSuccess) loadBalances(); }, 300000);
+registerAuxiliaryPoll('balances',300000,()=>loadBalances());
 
 
 // ── 운영 메모 (예약관리 탭 하단) ──
@@ -1793,8 +1818,9 @@ async function loadFleet(){
 function ensureInitialAuxiliaryReads(){
   if(!CORE.lastSuccess || CORE.error || _initialAuxGeneration===CORE.generation || _initialAuxBusy) return;
   clearTimeout(_initialAuxTimer);_initialAuxTimer=null;
+  if(document.hidden)return;
   if(!canAutoRead()){
-    _initialAuxTimer=setTimeout(ensureInitialAuxiliaryReads,document.hidden?30000:5000);
+    _initialAuxTimer=setTimeout(ensureInitialAuxiliaryReads,jitterReadDelay(5000));
     return;
   }
   const generation=CORE.generation;
@@ -1818,16 +1844,17 @@ function checkDay(){
 }
 function scheduleCore(delay){
   clearTimeout(_pollTimer);_pollTimer=null;
+  if(document.hidden){CORE.retryAt=0;return;}
   const regular=Number(CFG.pollMs)||0;
   if(delay===undefined){
-    if(CORE.error) delay=Math.min(60000,5000*Math.pow(2,Math.min(CORE.failures-1,4)));
-    else if(regular>=5000) delay=Math.max(10000,regular);
+    if(CORE.error) delay=Math.min(60000,jitterReadDelay(5000*Math.pow(2,Math.min(CORE.failures-1,4))));
+    else if(regular>=5000) delay=jitterReadDelay(Math.max(10000,regular));
     else return;
   }
   CORE.retryAt=Date.now()+delay;
   _pollTimer=setTimeout(()=>{
     _pollTimer=null;checkDay();
-    if(!canAutoRead()){scheduleCore(document.hidden?30000:5000);return;}
+    if(!canAutoRead()){scheduleCore(jitterReadDelay(5000));return;}
     loadBookingsFromGAS({automatic:true,quiet:true});
   },delay);
 }
@@ -1925,7 +1952,14 @@ async function saveStatusToGAS(key, status, meta){
 // A single timer and a single promise own full refresh; no partial poll can overwrite its badge.
 function pollNewBookings(){ return loadBookingsFromGAS({automatic:true,quiet:true}); }
 function restartPolling(){ clearTimeout(_pollTimer);_pollTimer=null;scheduleCore(); }
-document.addEventListener('visibilitychange',()=>{checkDay();if(!document.hidden && (CFG.pollMs || CORE.error || !CORE.lastSuccess)) scheduleCore(400);});
+document.addEventListener('visibilitychange',()=>{
+  checkDay();updateAuxiliaryPollingVisibility();
+  if(document.hidden){clearTimeout(_pollTimer);_pollTimer=null;CORE.retryAt=0;clearTimeout(_initialAuxTimer);_initialAuxTimer=null;return;}
+  if(CFG.pollMs||CORE.error||!CORE.lastSuccess)scheduleCore(jitterReadDelay(400));
+  if(CORE.lastSuccess&&_initialAuxGeneration!==CORE.generation&&!_initialAuxBusy){
+    clearTimeout(_initialAuxTimer);_initialAuxTimer=setTimeout(ensureInitialAuxiliaryReads,jitterReadDelay(2000));
+  }
+});
 window.addEventListener('online',()=>scheduleCore(400));
 
 // ── 문자내용 탭 ──
